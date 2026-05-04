@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+/* xterm overrides */
+.xterm {
+  height: 100%;
+}
+.xterm-viewport {
+  overflow-y: auto !important;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+::-webkit-scrollbar-thumb {
+  background: #424242;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Markdown prose in chat */
+.prose-chat p { margin: 0.25rem 0; }
+.prose-chat pre { background: #2d2d2d; padding: 0.5rem; border-radius: 4px; overflow-x: auto; font-size: 0.8rem; }
+.prose-chat code { background: #2d2d2d; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.85em; }
+.prose-chat pre code { background: transparent; padding: 0; }
+.prose-chat ul { padding-left: 1.2rem; margin: 0.25rem 0; }
+.prose-chat ol { padding-left: 1.2rem; margin: 0.25rem 0; }
+.prose-chat li { margin: 0.1rem 0; }
+.prose-chat h1, .prose-chat h2, .prose-chat h3 { margin: 0.5rem 0 0.25rem; font-weight: 600; }
+.prose-chat a { color: #60a5fa; text-decoration: underline; }
+.prose-chat blockquote { border-left: 3px solid #555; padding-left: 0.75rem; color: #9ca3af; margin: 0.25rem 0; }

@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+aiofiles
+httpx
+python-multipart
+websockets
+pywinpty; sys_platform == "win32"

@@ -1,0 +1,46 @@
+"""
+FastAPI main application.
+Mounts all routers, sets up CORS, ensures workspace/ exists.
+"""
+
+import os
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from files import router as files_router
+from agent import router as agent_router
+from terminal import router as terminal_router
+
+WORKSPACE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "workspace")
+
+app = FastAPI(title="Coide - Agentic Web IDE", version="1.0.0")
+
+# CORS for Vite dev server
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Mount routers
+app.include_router(files_router)
+app.include_router(agent_router)
+app.include_router(terminal_router)
+
+
+@app.on_event("startup")
+async def startup():
+    os.makedirs(WORKSPACE_DIR, exist_ok=True)
+    print(f"Workspace directory: {WORKSPACE_DIR}")
+
+
+@app.get("/")
+async def root():
+    return {"status": "ok", "app": "Coide Agentic IDE"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
