@@ -1,0 +1,153 @@
+// All menu definitions. Actions receive the store + editorRef as context.
+// separator: true = divider line
+// submenu: [...] = nested menu
+
+export function buildMenus({ store, editorRef, openCommandPalette, toast }) {
+  const ni = (label) => () => toast(`${label} — not yet implemented`, { icon: '🚧' })
+
+  return [
+    {
+      label: 'File',
+      items: [
+        { label: 'New File', shortcut: 'Ctrl+N', action: () => openCommandPalette('new-file') },
+        { label: 'New Window', shortcut: 'Ctrl+Shift+N', action: ni('New Window') },
+        { separator: true },
+        { label: 'Open File...', shortcut: 'Ctrl+O', action: ni('Open File') },
+        { label: 'Open Folder...', shortcut: 'Ctrl+K Ctrl+O', action: () => openCommandPalette('open-folder') },
+        { separator: true },
+        { label: 'Save', shortcut: 'Ctrl+S', action: () => editorRef?.current?.save?.() },
+        { label: 'Save As...', shortcut: 'Ctrl+Shift+S', action: ni('Save As') },
+        { label: 'Save All', shortcut: 'Ctrl+K S', action: ni('Save All') },
+        { separator: true },
+        { label: 'Close Editor', shortcut: 'Ctrl+W', action: () => store.closeActiveTab() },
+        { label: 'Close Folder', action: () => store.setExternalRoot(null) },
+        { separator: true },
+        { label: 'Exit', action: ni('Exit') },
+      ],
+    },
+    {
+      label: 'Edit',
+      items: [
+        { label: 'Undo', shortcut: 'Ctrl+Z', action: () => editorRef?.current?.trigger('undo') },
+        { label: 'Redo', shortcut: 'Ctrl+Y', action: () => editorRef?.current?.trigger('redo') },
+        { separator: true },
+        { label: 'Cut', shortcut: 'Ctrl+X', action: () => editorRef?.current?.trigger('cut') },
+        { label: 'Copy', shortcut: 'Ctrl+C', action: () => editorRef?.current?.trigger('copy') },
+        { label: 'Paste', shortcut: 'Ctrl+V', action: ni('Paste') },
+        { separator: true },
+        { label: 'Find', shortcut: 'Ctrl+F', action: () => editorRef?.current?.trigger('actions.find') },
+        { label: 'Replace', shortcut: 'Ctrl+H', action: () => editorRef?.current?.trigger('editor.action.startFindReplaceAction') },
+        { label: 'Find in Files', shortcut: 'Ctrl+Shift+F', action: () => { store.setActivityTab('search'); store.openSidePanel() } },
+        { separator: true },
+        { label: 'Go to Line...', shortcut: 'Ctrl+G', action: () => openCommandPalette(':') },
+        { label: 'Select All', shortcut: 'Ctrl+A', action: () => editorRef?.current?.trigger('selectAll') },
+        { separator: true },
+        { label: 'Toggle Line Comment', shortcut: 'Ctrl+/', action: () => editorRef?.current?.trigger('editor.action.commentLine') },
+        { label: 'Format Document', shortcut: 'Shift+Alt+F', action: () => editorRef?.current?.trigger('editor.action.formatDocument') },
+      ],
+    },
+    {
+      label: 'Selection',
+      items: [
+        { label: 'Select All', shortcut: 'Ctrl+A', action: () => editorRef?.current?.trigger('selectAll') },
+        { separator: true },
+        { label: 'Copy Line Up', shortcut: 'Shift+Alt+Up', action: () => editorRef?.current?.trigger('editor.action.copyLinesUpAction') },
+        { label: 'Copy Line Down', shortcut: 'Shift+Alt+Down', action: () => editorRef?.current?.trigger('editor.action.copyLinesDownAction') },
+        { label: 'Move Line Up', shortcut: 'Alt+Up', action: () => editorRef?.current?.trigger('editor.action.moveLinesUpAction') },
+        { label: 'Move Line Down', shortcut: 'Alt+Down', action: () => editorRef?.current?.trigger('editor.action.moveLinesDownAction') },
+        { separator: true },
+        { label: 'Add Cursor Above', shortcut: 'Ctrl+Alt+Up', action: () => editorRef?.current?.trigger('editor.action.insertCursorAbove') },
+        { label: 'Add Cursor Below', shortcut: 'Ctrl+Alt+Down', action: () => editorRef?.current?.trigger('editor.action.insertCursorBelow') },
+        { label: 'Add Next Occurrence', shortcut: 'Ctrl+D', action: () => editorRef?.current?.trigger('editor.action.addSelectionToNextFindMatch') },
+        { label: 'Select All Occurrences', shortcut: 'Ctrl+Shift+L', action: () => editorRef?.current?.trigger('editor.action.selectHighlights') },
+      ],
+    },
+    {
+      label: 'View',
+      items: [
+        { label: 'Command Palette', shortcut: 'Ctrl+Shift+P', action: () => openCommandPalette('>') },
+        { separator: true },
+        { label: 'Explorer', shortcut: 'Ctrl+Shift+E', action: () => { store.setActivityTab('explorer'); store.openSidePanel() } },
+        { label: 'Search', shortcut: 'Ctrl+Shift+F', action: () => { store.setActivityTab('search'); store.openSidePanel() } },
+        { label: 'Extensions', shortcut: 'Ctrl+Shift+X', action: () => { store.setActivityTab('extensions'); store.openSidePanel() } },
+        { separator: true },
+        { label: 'Terminal', shortcut: 'Ctrl+`', action: () => { store.openBottomPanel(); store.setBottomTab('terminal') } },
+        { label: 'Problems', shortcut: 'Ctrl+Shift+M', action: () => store.setBottomTab('problems') },
+        { label: 'Output', shortcut: 'Ctrl+Shift+U', action: () => store.setBottomTab('output') },
+        { label: 'Debug Console', shortcut: 'Ctrl+Shift+Y', action: () => store.setBottomTab('debug') },
+        { separator: true },
+        { label: 'Toggle Side Bar', shortcut: 'Ctrl+B', action: () => store.toggleSidePanel() },
+        { label: 'Toggle Panel', shortcut: 'Ctrl+J', action: () => store.toggleBottomPanel() },
+        { separator: true },
+        { label: 'Zoom In', shortcut: 'Ctrl+=', action: () => store.zoomIn() },
+        { label: 'Zoom Out', shortcut: 'Ctrl+-', action: () => store.zoomOut() },
+        { label: 'Reset Zoom', shortcut: 'Ctrl+0', action: () => store.resetZoom() },
+        { separator: true },
+        { label: 'Full Screen', shortcut: 'F11', action: () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen() },
+        { separator: true },
+        {
+          label: 'Theme', submenu: [
+            { label: 'Dark', action: () => store.setTheme('dark') },
+            { label: 'Light', action: () => store.setTheme('light') },
+          ]
+        },
+      ],
+    },
+    {
+      label: 'Go',
+      items: [
+        { label: 'Back', shortcut: 'Alt+Left', action: ni('Back') },
+        { label: 'Forward', shortcut: 'Alt+Right', action: ni('Forward') },
+        { separator: true },
+        { label: 'Go to File...', shortcut: 'Ctrl+P', action: () => openCommandPalette('') },
+        { label: 'Go to Symbol...', shortcut: 'Ctrl+Shift+O', action: () => openCommandPalette('@') },
+        { label: 'Go to Line/Column...', shortcut: 'Ctrl+G', action: () => openCommandPalette(':') },
+        { separator: true },
+        { label: 'Go to Definition', shortcut: 'F12', action: () => editorRef?.current?.trigger('editor.action.revealDefinition') },
+        { label: 'Go to References', shortcut: 'Shift+F12', action: () => editorRef?.current?.trigger('editor.action.goToReferences') },
+        { separator: true },
+        { label: 'Next Problem', shortcut: 'F8', action: () => editorRef?.current?.trigger('editor.action.marker.next') },
+        { label: 'Previous Problem', shortcut: 'Shift+F8', action: () => editorRef?.current?.trigger('editor.action.marker.prev') },
+      ],
+    },
+    {
+      label: 'Run',
+      items: [
+        { label: 'Run', shortcut: 'F5', action: ni('Run') },
+        { label: 'Run Without Debugging', shortcut: 'Ctrl+F5', action: ni('Run Without Debugging') },
+        { label: 'Stop', shortcut: 'Shift+F5', action: ni('Stop') },
+        { label: 'Restart', shortcut: 'Ctrl+Shift+F5', action: ni('Restart') },
+        { separator: true },
+        { label: 'Toggle Breakpoint', shortcut: 'F9', action: ni('Toggle Breakpoint') },
+        { separator: true },
+        { label: 'Open Configurations', action: ni('Open Configurations') },
+        { label: 'Add Configuration...', action: ni('Add Configuration') },
+      ],
+    },
+    {
+      label: 'Terminal',
+      items: [
+        { label: 'New Terminal', shortcut: 'Ctrl+Shift+`', action: () => { store.openBottomPanel(); store.setBottomTab('terminal') } },
+        { label: 'Split Terminal', shortcut: 'Ctrl+Shift+5', action: ni('Split Terminal') },
+        { separator: true },
+        { label: 'Run Active File', action: ni('Run Active File') },
+        { label: 'Run Selected Text', action: ni('Run Selected Text') },
+        { separator: true },
+        { label: 'Kill Terminal', action: ni('Kill Terminal') },
+        { label: 'Kill All Terminals', action: ni('Kill All Terminals') },
+      ],
+    },
+    {
+      label: 'Help',
+      items: [
+        { label: 'Welcome', action: ni('Welcome') },
+        { label: 'Getting Started', action: ni('Getting Started') },
+        { separator: true },
+        { label: 'Keyboard Shortcuts', shortcut: 'Ctrl+K Ctrl+S', action: () => openCommandPalette('>keyboard') },
+        { separator: true },
+        { label: 'Check for Updates', action: ni('Check for Updates') },
+        { label: 'About', action: () => toast('Coide — Agentic Web IDE v1.0', { icon: '💡' }) },
+      ],
+    },
+  ]
+}

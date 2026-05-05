@@ -13,11 +13,14 @@
     "moduleDetection": "force",
     "noEmit": true,
 
-    /* Linting */
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
+    /* Allow JS files */
+    "allowJs": true,
+    "checkJs": false,
+
+    /* Relaxed linting for JS-only project */
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src/**/*"]
 }
