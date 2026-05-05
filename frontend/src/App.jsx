@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+﻿import React, { useState, useEffect, useCallback } from 'react'
 import { Toaster, toast } from 'react-hot-toast'
 import FileTree from './components/FileTree.jsx'
 import Editor from './components/Editor.jsx'
@@ -24,7 +24,8 @@ export default function App() {
   const [editorContent, setEditorContent] = useState('')
   const [unsaved, setUnsaved] = useState(false)
 
-  // Terminal height (draggable)
+  // Terminal panel visibility + height
+  const [terminalVisible, setTerminalVisible] = useState(true)
   const [terminalHeight, setTerminalHeight] = useState(220)
   const [isDragging, setIsDragging] = useState(false)
 
@@ -201,17 +202,34 @@ export default function App() {
           />
         </div>
 
-        {/* Drag handle */}
-        <div
-          className={`h-[3px] flex-shrink-0 cursor-row-resize transition-colors
-            ${isDragging ? 'bg-[#007acc]' : 'bg-[#333] hover:bg-[#007acc]'}`}
-          onMouseDown={handleDragStart}
-        />
+        {/* Drag handle — only when terminal is visible */}
+        {terminalVisible && (
+          <div
+            className={`h-[3px] flex-shrink-0 cursor-row-resize transition-colors
+              ${isDragging ? 'bg-[#007acc]' : 'bg-[#333] hover:bg-[#007acc]'}`}
+            onMouseDown={handleDragStart}
+          />
+        )}
 
-        {/* Terminal */}
-        <div style={{ height: terminalHeight }} className="flex-shrink-0 overflow-hidden">
-          <Terminal cwd={externalRoot || rootPath || undefined} />
-        </div>
+        {/* Terminal panel */}
+        {terminalVisible ? (
+          <div style={{ height: terminalHeight }} className="flex-shrink-0 overflow-hidden">
+            <Terminal
+              cwd={externalRoot || rootPath || undefined}
+              onClose={() => setTerminalVisible(false)}
+            />
+          </div>
+        ) : (
+          <div className="flex-shrink-0 h-7 flex items-center px-3 bg-[#1e1e1e] border-t border-[#333]">
+            <button
+              onClick={() => setTerminalVisible(true)}
+              className="flex items-center gap-1.5 text-[10px] text-[#555] hover:text-[#858585] transition-colors"
+              title="Open terminal panel"
+            >
+              <span>▲ Terminal</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Right: Chat ───────────────────────────────────────────────────── */}
@@ -225,3 +243,4 @@ export default function App() {
     </div>
   )
 }
+

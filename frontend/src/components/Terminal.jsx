@@ -1,262 +1,420 @@
-import React, { useEffect, useRef, useCallback, useState } from 'react'
-import { Terminal as TerminalIcon, RotateCcw } from 'lucide-react'
+﻿
+/**
+ * Terminal.jsx — Multi-tab terminal using imperative TerminalInstance.
+ *
+ * Architecture:
+ * - Each tab owns a TerminalInstance (xterm + WebSocket), created once.
+ * - Switching tabs calls instance.mount(domEl) / instance.unmount().
+ * - The xterm DOM node physically moves between containers — never re-created.
+ * - Terminal history is always preserved, exactly like VS Code / iTerm.
+ */
+import React, {
+  useState, useEffect, useCallback, useRef, useMemo
+} from 'react'
+import { v4 as uuidv4 } from 'uuid'
+import { X } from 'lucide-react'
+import TerminalTabs from './terminal/TerminalTabs.jsx'
+import TerminalToolbar from './terminal/TerminalToolbar.jsx'
+import TerminalPane from './terminal/TerminalPane.jsx'
+import TerminalSearch from './terminal/TerminalSearch.jsx'
+import TerminalSettings from './terminal/TerminalSettings.jsx'
+import { TerminalInstance } from '../terminal/TerminalInstance.js'
+import { loadSettings, saveSettings } from '../terminal/settings.js'
+import { THEMES } from '../terminal/themes.js'
 
-export default function Terminal({ cwd }) {
-  const containerRef = useRef(null)
-  const termRef = useRef(null)
-  const fitAddonRef = useRef(null)
-  const wsRef = useRef(null)
-  const reconnectTimer = useRef(null)
-  const mountedRef = useRef(true)
-  const [status, setStatus] = useState('connecting') // connecting | connected | disconnected
+function makeTabId() { return uuidv4() }
 
-  // Build WebSocket URL — pass cwd as query param if provided
-  const buildWsUrl = useCallback(() => {
-    const base = 'ws://localhost:8000/ws/terminal'
-    if (cwd) return `${base}?cwd=${encodeURIComponent(cwd)}`
-    return base
-  }, [cwd])
+export default function Terminal({ cwd, onClose }) {
+  const [settings, setSettings] = useState(() => loadSettings())
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
 
-  const connectWs = useCallback((term, fitAddon) => {
-    if (!mountedRef.current) return
-    if (reconnectTimer.current) {
-      clearTimeout(reconnectTimer.current)
-      reconnectTimer.current = null
-    }
+  // tabs: [{ id, label, cwd, hasActivity }]
+  const [tabs, setTabs] = useState(() => [{ id: makeTabId(), label: 'bash', cwd: cwd || '', hasActivity: false }])
+  const [activeTabId, setActiveTabId] = useState(null)
 
-    const ws = new WebSocket(buildWsUrl())
-    wsRef.current = ws
-    ws.binaryType = 'arraybuffer'
-    setStatus('connecting')
+  // instances: Map<tabId, TerminalInstance>
+  const instancesRef = useRef(new Map())
 
-    ws.onopen = () => {
-      if (!mountedRef.current) { ws.close(); return }
-      setStatus('connected')
-      // Send initial terminal size
-      try {
-        const dims = fitAddon.proposeDimensions()
-        if (dims && dims.cols > 0 && dims.rows > 0) {
-          ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }))
-        }
-      } catch (_) {}
-    }
+  // pane refs: tabId → { searchAddon, sendInput, fit, status, reconnect }
+  const paneRefsRef = useRef({})
 
-    ws.onmessage = (event) => {
-      if (!mountedRef.current) return
-      try {
-        if (event.data instanceof ArrayBuffer) {
-          term.write(new Uint8Array(event.data))
-        } else {
-          term.write(event.data)
-        }
-      } catch (_) {}
-    }
+  // Split
+  const [splitMode, setSplitMode] = useState(null)   // null | 'h' | 'v'
+  const [splitTabId, setSplitTabId] = useState(null)
+  const [splitRatio, setSplitRatio] = useState(0.5)
+  const splitDragging = useRef(false)
+  const splitContainerRef = useRef(null)
 
-    ws.onclose = (e) => {
-      if (!mountedRef.current) return
-      setStatus('disconnected')
-      // Only auto-reconnect on unexpected close (not clean close code 1000)
-      if (e.code !== 1000) {
-        term.write('\r\n\x1b[33m[Reconnecting in 3s…]\x1b[0m\r\n')
-        reconnectTimer.current = setTimeout(() => {
-          if (mountedRef.current) connectWs(term, fitAddon)
-        }, 3000)
+  // Force re-render when instance status changes
+  const [, forceUpdate] = useState(0)
+  const rerender = useCallback(() => forceUpdate(n => n + 1), [])
+
+  const activeTheme = useMemo(
+    () => THEMES[settings.theme] || THEMES['one-dark'],
+    [settings.theme]
+  )
+
+  // ── Create a TerminalInstance for a tab ───────────────────────────────────
+  const createInstance = useCallback((tabId, tabCwd) => {
+    const inst = new TerminalInstance(
+      uuidv4(),
+      tabCwd || cwd || '',
+      settings,
+      activeTheme,
+      {
+        onCwdChange: (newCwd) => {
+          setTabs(prev => prev.map(t =>
+            t.id === tabId
+              ? { ...t, cwd: newCwd, label: newCwd.split('/').slice(-2).join('/') || 'bash' }
+              : t
+          ))
+        },
+        onActivity: () => {
+          setTabs(prev => prev.map(t =>
+            t.id === tabId && t.id !== activeTabId
+              ? { ...t, hasActivity: true }
+              : t
+          ))
+        },
+        onStatusChange: rerender,
       }
-    }
+    )
+    inst.init()
+    instancesRef.current.set(tabId, inst)
+    return inst
+  }, [cwd, settings, activeTheme, activeTabId, rerender])
 
-    ws.onerror = () => {
-      if (!mountedRef.current) return
-      setStatus('disconnected')
-      term.write('\r\n\x1b[31m[Connection error — backend may not be running]\x1b[0m\r\n')
-    }
-
-    // Forward keystrokes / paste to WebSocket
-    term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(data)
-      }
-    })
-
-    return ws
-  }, [buildWsUrl])
-
-  const initTerminal = useCallback(async () => {
-    if (!containerRef.current || !mountedRef.current) return
-
-    // Lazy-load xterm
-    const [{ Terminal: XTerm }, { FitAddon }] = await Promise.all([
-      import('xterm'),
-      import('xterm-addon-fit'),
-    ])
-    await import('xterm/css/xterm.css')
-
-    // Dispose previous instance
-    if (termRef.current) {
-      try { termRef.current.dispose() } catch (_) {}
-    }
-    if (wsRef.current) {
-      wsRef.current.onclose = null // prevent reconnect loop on manual dispose
-      try { wsRef.current.close(1000) } catch (_) {}
-    }
-
-    const term = new XTerm({
-      theme: {
-        background: '#141414',
-        foreground: '#d4d4d4',
-        cursor: '#aeafad',
-        cursorAccent: '#141414',
-        selectionBackground: 'rgba(38, 79, 120, 0.7)',
-        black: '#000000',
-        red: '#cd3131',
-        green: '#0dbc79',
-        yellow: '#e5e510',
-        blue: '#2472c8',
-        magenta: '#bc3fbc',
-        cyan: '#11a8cd',
-        white: '#e5e5e5',
-        brightBlack: '#666666',
-        brightRed: '#f14c4c',
-        brightGreen: '#23d18b',
-        brightYellow: '#f5f543',
-        brightBlue: '#3b8eea',
-        brightMagenta: '#d670d6',
-        brightCyan: '#29b8db',
-        brightWhite: '#e5e5e5',
-      },
-      fontFamily: "'Cascadia Code', 'Cascadia Mono', 'Fira Code', 'JetBrains Mono', Consolas, 'Courier New', monospace",
-      fontSize: 13,
-      lineHeight: 1.3,
-      letterSpacing: 0,
-      cursorBlink: true,
-      cursorStyle: 'block',
-      allowTransparency: false,
-      scrollback: 10000,
-      convertEol: false,
-      allowProposedApi: true,
-    })
-
-    const fitAddon = new FitAddon()
-    term.loadAddon(fitAddon)
-
-    // Clear container and mount
-    containerRef.current.innerHTML = ''
-    term.open(containerRef.current)
-
-    termRef.current = term
-    fitAddonRef.current = fitAddon
-
-    // Initial fit
-    requestAnimationFrame(() => {
-      try { fitAddon.fit() } catch (_) {}
-    })
-
-    // Connect WebSocket
-    connectWs(term, fitAddon)
-
-    // Resize observer
-    const ro = new ResizeObserver(() => {
-      if (!mountedRef.current) return
-      requestAnimationFrame(() => {
-        try {
-          fitAddon.fit()
-          const dims = fitAddon.proposeDimensions()
-          if (dims && wsRef.current?.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }))
-          }
-        } catch (_) {}
-      })
-    })
-    ro.observe(containerRef.current)
-    term._ro = ro
-  }, [connectWs])
-
-  // Init on mount
+  // ── Bootstrap first tab ───────────────────────────────────────────────────
   useEffect(() => {
-    mountedRef.current = true
-    initTerminal()
+    const first = tabs[0]
+    createInstance(first.id, first.cwd)
+    setActiveTabId(first.id)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Cleanup all instances on unmount ─────────────────────────────────────
+  useEffect(() => {
     return () => {
-      mountedRef.current = false
-      if (reconnectTimer.current) clearTimeout(reconnectTimer.current)
-      if (wsRef.current) {
-        wsRef.current.onclose = null
-        try { wsRef.current.close(1000) } catch (_) {}
-      }
-      if (termRef.current) {
-        if (termRef.current._ro) termRef.current._ro.disconnect()
-        try { termRef.current.dispose() } catch (_) {}
-      }
+      instancesRef.current.forEach(inst => inst.destroy())
+      instancesRef.current.clear()
+      // Remove the holding div
+      const holder = document.getElementById('__terminal_holder__')
+      if (holder) holder.remove()
     }
-  }, []) // only on mount/unmount
+  }, [])
 
-  // Re-init when cwd changes (new folder opened)
+  // ── Apply settings to all instances live ─────────────────────────────────
   useEffect(() => {
-    if (termRef.current) {
-      // Close existing WS cleanly and reconnect with new cwd
-      if (wsRef.current) {
-        wsRef.current.onclose = null
-        try { wsRef.current.close(1000) } catch (_) {}
+    instancesRef.current.forEach(inst => inst.applySettings(settings))
+  }, [settings])
+
+  // ── Apply theme to all instances live ────────────────────────────────────
+  useEffect(() => {
+    instancesRef.current.forEach(inst => inst.applyTheme(activeTheme))
+  }, [activeTheme])
+
+  // ── Tab management ────────────────────────────────────────────────────────
+  const addTab = useCallback(() => {
+    if (tabs.length >= 8) return
+    const id = makeTabId()
+    const tab = { id, label: 'bash', cwd: cwd || '', hasActivity: false }
+    createInstance(id, cwd || '')
+    setTabs(t => [...t, tab])
+    setActiveTabId(id)
+    setSplitMode(null)
+    setSplitTabId(null)
+  }, [tabs.length, cwd, createInstance])
+
+  const closeTab = useCallback((tabId) => {
+    setTabs(prev => {
+      if (prev.length === 1) return prev
+      const idx = prev.findIndex(t => t.id === tabId)
+      const next = prev.filter(t => t.id !== tabId)
+      // Destroy instance
+      const inst = instancesRef.current.get(tabId)
+      if (inst) { inst.destroy(); instancesRef.current.delete(tabId) }
+      delete paneRefsRef.current[tabId]
+      // Switch if needed
+      if (activeTabId === tabId) {
+        const newActive = next[Math.min(idx, next.length - 1)]
+        setActiveTabId(newActive.id)
+        setSplitMode(null)
+        setSplitTabId(null)
       }
-      if (termRef.current && fitAddonRef.current) {
-        termRef.current.write('\r\n\x1b[36m[Switching to: ' + (cwd || 'workspace') + ']\x1b[0m\r\n')
-        connectWs(termRef.current, fitAddonRef.current)
+      return next
+    })
+  }, [activeTabId])
+
+  const renameTab = useCallback((tabId, label) => {
+    setTabs(prev => prev.map(t => t.id === tabId ? { ...t, label } : t))
+  }, [])
+
+  const switchTab = useCallback((tabId) => {
+    setActiveTabId(tabId)
+    setSplitMode(null)
+    setSplitTabId(null)
+    // Clear activity indicator
+    setTabs(prev => prev.map(t => t.id === tabId ? { ...t, hasActivity: false } : t))
+  }, [])
+
+  // ── Split management ──────────────────────────────────────────────────────
+  const splitH = useCallback(() => {
+    if (splitMode) return
+    const id = makeTabId()
+    const tab = { id, label: 'bash', cwd: cwd || '', hasActivity: false }
+    createInstance(id, cwd || '')
+    setTabs(t => [...t, tab])
+    setSplitMode('h')
+    setSplitTabId(id)
+  }, [splitMode, cwd, createInstance])
+
+  const splitV = useCallback(() => {
+    if (splitMode) return
+    const id = makeTabId()
+    const tab = { id, label: 'bash', cwd: cwd || '', hasActivity: false }
+    createInstance(id, cwd || '')
+    setTabs(t => [...t, tab])
+    setSplitMode('v')
+    setSplitTabId(id)
+  }, [splitMode, cwd, createInstance])
+
+  const closeSecondPane = useCallback(() => {
+    if (splitTabId) {
+      const inst = instancesRef.current.get(splitTabId)
+      if (inst) { inst.destroy(); instancesRef.current.delete(splitTabId) }
+      setTabs(prev => prev.filter(t => t.id !== splitTabId))
+      delete paneRefsRef.current[splitTabId]
+    }
+    setSplitMode(null)
+    setSplitTabId(null)
+  }, [splitTabId])
+
+  // ── Split drag ────────────────────────────────────────────────────────────
+  const onSplitDragStart = useCallback((e) => {
+    e.preventDefault()
+    splitDragging.current = true
+    const onMove = (ev) => {
+      if (!splitDragging.current || !splitContainerRef.current) return
+      const rect = splitContainerRef.current.getBoundingClientRect()
+      if (splitMode === 'h') {
+        setSplitRatio(Math.max(0.2, Math.min(0.8, (ev.clientX - rect.left) / rect.width)))
+      } else {
+        setSplitRatio(Math.max(0.2, Math.min(0.8, (ev.clientY - rect.top) / rect.height)))
       }
     }
-  }, [cwd]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleReconnect = useCallback(() => {
-    if (termRef.current) {
-      termRef.current.write('\r\n\x1b[33m[Reconnecting…]\x1b[0m\r\n')
+    const onUp = () => {
+      splitDragging.current = false
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      // Re-fit both panes after drag
+      if (activeTabId) instancesRef.current.get(activeTabId)?.fit()
+      if (splitTabId) instancesRef.current.get(splitTabId)?.fit()
     }
-    if (wsRef.current) {
-      wsRef.current.onclose = null
-      try { wsRef.current.close(1000) } catch (_) {}
-    }
-    if (termRef.current && fitAddonRef.current) {
-      connectWs(termRef.current, fitAddonRef.current)
-    }
-  }, [connectWs])
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [splitMode, activeTabId, splitTabId])
 
-  const statusColor = {
-    connecting: 'text-yellow-500',
-    connected: 'text-green-500',
-    disconnected: 'text-red-500',
-  }[status]
+  // ── Search ────────────────────────────────────────────────────────────────
+  const toggleSearch = useCallback(() => setSearchOpen(o => !o), [])
 
-  const statusDot = {
-    connecting: '◌',
-    connected: '●',
-    disconnected: '○',
-  }[status]
+  const doSearch = useCallback((query, opts, direction) => {
+    const ref = paneRefsRef.current[activeTabId]
+    if (!ref?.searchAddon) return
+    const searchOpts = {
+      caseSensitive: opts.caseSensitive,
+      wholeWord: opts.wholeWord,
+      regex: opts.regex,
+      decorations: {
+        matchBackground: '#ffff0040',
+        matchBorder: '#ffff00',
+        matchOverviewRuler: '#ffff00',
+        activeMatchBackground: '#ff800080',
+        activeMatchBorder: '#ff8000',
+        activeMatchColorOverviewRuler: '#ff8000',
+      },
+    }
+    if (direction === 'next') ref.searchAddon.findNext(query, searchOpts)
+    else ref.searchAddon.findPrevious(query, searchOpts)
+  }, [activeTabId])
+
+  // ── Settings ──────────────────────────────────────────────────────────────
+  const updateSettings = useCallback((patch) => {
+    setSettings(prev => {
+      const next = { ...prev, ...patch }
+      saveSettings(next)
+      return next
+    })
+  }, [])
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e) => {
+      const ctrl = e.ctrlKey || e.metaKey
+      const shift = e.shiftKey
+      if (ctrl && shift && e.key === 'T') { e.preventDefault(); addTab(); return }
+      if (ctrl && shift && e.key === 'W') { e.preventDefault(); closeTab(activeTabId); return }
+      if (ctrl && !shift && e.key === 'Tab') {
+        e.preventDefault()
+        const idx = tabs.findIndex(t => t.id === activeTabId)
+        switchTab(tabs[(idx + 1) % tabs.length].id)
+        return
+      }
+      if (ctrl && shift && e.key === 'Tab') {
+        e.preventDefault()
+        const idx = tabs.findIndex(t => t.id === activeTabId)
+        switchTab(tabs[(idx - 1 + tabs.length) % tabs.length].id)
+        return
+      }
+      if (ctrl && shift && e.key === 'H') { e.preventDefault(); splitH(); return }
+      if (ctrl && shift && e.key === 'F') { e.preventDefault(); toggleSearch(); return }
+      if (ctrl && !shift && e.key === 'f') { e.preventDefault(); toggleSearch(); return }
+      if (e.key === 'Escape' && searchOpen) { e.preventDefault(); setSearchOpen(false); return }
+      if (ctrl && (e.key === '=' || e.key === '+')) {
+        e.preventDefault(); updateSettings({ fontSize: Math.min(24, settings.fontSize + 1) }); return
+      }
+      if (ctrl && e.key === '-') {
+        e.preventDefault(); updateSettings({ fontSize: Math.max(8, settings.fontSize - 1) }); return
+      }
+      if (ctrl && e.key === '0') { e.preventDefault(); updateSettings({ fontSize: 14 }); return }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [addTab, closeTab, switchTab, splitH, toggleSearch, searchOpen, tabs, activeTabId, settings.fontSize, updateSettings])
+
+  // ── Paste ─────────────────────────────────────────────────────────────────
+  const handlePaste = useCallback(async (tabId) => {
+    try {
+      const text = await navigator.clipboard.readText()
+      const lines = text.split('\n')
+      if (lines.length > 2) {
+        const ok = window.confirm(
+          `Paste ${lines.length} lines?\n\nPreview:\n${lines.slice(0, 5).join('\n')}${lines.length > 5 ? '\n…' : ''}`
+        )
+        if (!ok) return
+      }
+      instancesRef.current.get(tabId)?.sendInput(text)
+    } catch (_) {}
+  }, [])
+
+  // ── Derived ───────────────────────────────────────────────────────────────
+  const activeCwd = useMemo(() => {
+    return tabs.find(t => t.id === activeTabId)?.cwd || cwd || ''
+  }, [tabs, activeTabId, cwd])
+
+  const activeStatus = instancesRef.current.get(activeTabId)?.status || 'connecting'
+
+  if (!activeTabId) return null
+
+  // Which tabs are shown in the pane area
+  const primaryTabId = activeTabId
+  const secondaryTabId = splitMode ? splitTabId : null
 
   return (
-    <div className="h-full flex flex-col bg-[#141414]">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-1 bg-[#1e1e1e] border-b border-[#333] flex-shrink-0">
-        <TerminalIcon size={12} className="text-[#858585]" />
-        <span className="text-xs text-[#858585]">Terminal</span>
-        {cwd && (
-          <span className="text-xs text-[#555] truncate max-w-[200px]" title={cwd}>
-            — {cwd.split(/[/\\]/).pop() || cwd}
-          </span>
+    <div
+      className="h-full flex flex-col bg-[#0d0d0d] overflow-hidden"
+      aria-label="Terminal"
+      role="region"
+    >
+      {/* Tab bar + close button */}
+      <div className="flex items-center flex-shrink-0 bg-[#1a1a1a] border-b border-[#333]">
+        <div className="flex-1 min-w-0">
+          <TerminalTabs
+            tabs={tabs}
+            activeTabId={activeTabId}
+            onSwitch={switchTab}
+            onAdd={addTab}
+            onClose={closeTab}
+            onRename={renameTab}
+          />
+        </div>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="flex-shrink-0 w-8 h-9 flex items-center justify-center text-[#555] hover:text-[#d4d4d4] hover:bg-[#3a3a3a] transition-colors border-l border-[#333]"
+            title="Close terminal panel"
+          >
+            <X size={13} />
+          </button>
         )}
-        <div className="flex-1" />
-        <span className={`text-[10px] ${statusColor}`} title={status}>
-          {statusDot}
-        </span>
-        <button
-          onClick={handleReconnect}
-          className="p-1 rounded hover:bg-[#3a3a3a] text-[#555] hover:text-[#858585] transition-colors"
-          title="Reconnect"
-        >
-          <RotateCcw size={11} />
-        </button>
       </div>
 
-      {/* xterm container */}
+      {/* Toolbar */}
+      <TerminalToolbar
+        cwd={activeCwd}
+        status={activeStatus}
+        onNewTab={addTab}
+        onSplitH={splitH}
+        onSplitV={splitV}
+        onClear={() => instancesRef.current.get(activeTabId)?.sendInput('\x0c')}
+        onSearch={toggleSearch}
+        onSettings={() => setSettingsOpen(o => !o)}
+      />
+
+      {/* Pane area */}
       <div
-        ref={containerRef}
-        className="flex-1 min-h-0 overflow-hidden"
-        style={{ padding: '4px 6px', background: '#141414' }}
+        ref={splitContainerRef}
+        className={`flex-1 min-h-0 flex overflow-hidden relative ${splitMode === 'v' ? 'flex-col' : 'flex-row'}`}
+      >
+        {/* Search bar inside pane area */}
+        {searchOpen && (
+          <div className="absolute top-1 right-2 z-30">
+            <TerminalSearch
+              onSearch={doSearch}
+              onClose={() => setSearchOpen(false)}
+            />
+          </div>
+        )}
+
+        {/* Primary pane (active tab) */}
+        <div
+          style={splitMode ? { flexBasis: `${splitRatio * 100}%`, flexShrink: 0, flexGrow: 0 } : { flex: 1 }}
+          className="relative min-w-0 min-h-0 overflow-hidden"
+        >
+          <TerminalPane
+            key={primaryTabId}
+            instance={instancesRef.current.get(primaryTabId)}
+            active={true}
+            onRef={(ref) => { paneRefsRef.current[primaryTabId] = ref }}
+          />
+        </div>
+
+        {/* Split divider */}
+        {splitMode && (
+          <div
+            className={`flex-shrink-0 bg-[#2a2a2a] hover:bg-[#007acc] transition-colors ${
+              splitMode === 'h' ? 'w-1 cursor-col-resize' : 'h-1 cursor-row-resize'
+            }`}
+            onMouseDown={onSplitDragStart}
+          />
+        )}
+
+        {/* Secondary pane (split) */}
+        {splitMode && secondaryTabId && (
+          <div
+            style={{ flex: 1 }}
+            className="relative min-w-0 min-h-0 overflow-hidden"
+          >
+            <TerminalPane
+              key={secondaryTabId}
+              instance={instancesRef.current.get(secondaryTabId)}
+              active={true}
+              onRef={(ref) => { paneRefsRef.current[secondaryTabId] = ref }}
+            />
+            <button
+              className="absolute top-1 right-1 z-10 w-5 h-5 flex items-center justify-center rounded bg-[#333] hover:bg-[#555] text-[#858585] hover:text-white text-xs"
+              onClick={closeSecondPane}
+              title="Close split pane"
+            >✕</button>
+          </div>
+        )}
+      </div>
+
+      {/* Settings drawer */}
+      <TerminalSettings
+        open={settingsOpen}
+        settings={settings}
+        onUpdate={updateSettings}
+        onClose={() => setSettingsOpen(false)}
       />
     </div>
   )
