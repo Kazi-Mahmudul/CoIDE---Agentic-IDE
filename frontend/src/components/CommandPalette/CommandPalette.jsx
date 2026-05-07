@@ -4,7 +4,9 @@ import { useCommandStore } from '../../store/useCommandStore.js'
 
 function highlight(text, query) {
   if (!query) return <span>{text}</span>
-  const idx = text.toLowerCase().indexOf(query.toLowerCase())
+  const lower = text.toLowerCase()
+  const qLower = query.toLowerCase()
+  const idx = lower.indexOf(qLower)
   if (idx === -1) return <span>{text}</span>
   return (
     <span>
@@ -15,7 +17,7 @@ function highlight(text, query) {
   )
 }
 
-export default function CommandPalette({ openFiles, onOpenFile }) {
+export default function CommandPalette({ openFiles, workspaceFiles = [], onOpenFile }) {
   const { commandPaletteOpen, commandPalettePrefix, closeCommandPalette } = useIDEStore()
   const { commands, run, getRecent } = useCommandStore()
 
@@ -27,9 +29,13 @@ export default function CommandPalette({ openFiles, onOpenFile }) {
   // Reset when opened
   useEffect(() => {
     if (commandPaletteOpen) {
-      setInput(commandPalettePrefix === '>' ? '>' : commandPalettePrefix || '')
+      const prefix = commandPalettePrefix || ''
+      setInput(prefix === '>' ? '>' : prefix)
       setSelected(0)
-      setTimeout(() => inputRef.current?.focus(), 10)
+      setTimeout(() => {
+        inputRef.current?.focus()
+        inputRef.current?.select()
+      }, 10)
     }
   }, [commandPaletteOpen, commandPalettePrefix])
 
@@ -54,14 +60,30 @@ export default function CommandPalette({ openFiles, onOpenFile }) {
         : [...recent, ...commands.filter(c => !recent.find(r => r.id === c.id))]
       return all.slice(0, 50)
     }
+
     if (mode === 'file') {
-      return openFiles
-        .filter(f => !query || f.label.toLowerCase().includes(query.toLowerCase()))
-        .slice(0, 20)
-        .map(f => ({ id: f.id, label: f.label, description: f.path, _file: f }))
+      // Merge open files + workspace files, deduplicate by path
+      const openPaths = new Set(openFiles.map(f => f.path))
+      const wsItems = workspaceFiles
+        .filter(f => !openPaths.has(f.path))
+        .map(f => ({ id: f.path, label: f.name || f.path.split('/').pop(), description: f.path, _path: f.path }))
+      const openItems = openFiles.map(f => ({ id: f.id, label: f.label, description: f.path, _file: f }))
+      const all = [...openItems, ...wsItems]
+      return query
+        ? all.filter(f => f.label.toLowerCase().includes(query.toLowerCase()) || f.description?.toLowerCase().includes(query.toLowerCase()))
+        : all.slice(0, 30)
     }
+
+    if (mode === 'line') {
+      const lineNum = parseInt(query)
+      if (!isNaN(lineNum) && lineNum > 0) {
+        return [{ id: `line:${lineNum}`, label: `Go to line ${lineNum}`, description: '', _line: lineNum }]
+      }
+      return []
+    }
+
     return []
-  }, [mode, query, commands, openFiles, getRecent])
+  }, [mode, query, commands, openFiles, workspaceFiles, getRecent])
 
   useEffect(() => {
     setSelected(0)
@@ -77,13 +99,16 @@ export default function CommandPalette({ openFiles, onOpenFile }) {
     closeCommandPalette()
     if (mode === 'command') {
       run(item.id)
-    } else if (mode === 'file' && item._file) {
-      onOpenFile?.(item._file)
-    } else if (mode === 'line') {
-      const lineNum = parseInt(query)
-      if (!isNaN(lineNum)) onOpenFile?.({ _goToLine: lineNum })
+    } else if (mode === 'file') {
+      if (item._file) {
+        onOpenFile?.(item._file)
+      } else if (item._path) {
+        onOpenFile?.(item._path)
+      }
+    } else if (mode === 'line' && item._line) {
+      onOpenFile?.({ _goToLine: item._line })
     }
-  }, [mode, query, run, closeCommandPalette, onOpenFile])
+  }, [mode, run, closeCommandPalette, onOpenFile])
 
   const handleKeyDown = (e) => {
     if (e.key === 'Escape') { e.preventDefault(); closeCommandPalette(); return }
@@ -98,20 +123,31 @@ export default function CommandPalette({ openFiles, onOpenFile }) {
 
   if (!commandPaletteOpen) return null
 
-  const placeholder = mode === 'command' ? 'Type a command…'
-    : mode === 'file' ? 'Type a file name…'
-    : mode === 'symbol' ? 'Type a symbol…'
-    : 'Go to line…'
+  const placeholder =
+    mode === 'command' ? 'Type a command…' :
+    mode === 'file' ? 'Type a file name…' :
+    mode === 'symbol' ? 'Type a symbol…' :
+    'Go to line…'
+
+  const modeHint =
+    mode === 'command' ? '> commands' :
+    mode === 'file' ? 'files' :
+    mode === 'symbol' ? '@ symbols' :
+    ': line number'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]" onClick={closeCommandPalette}>
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]"
+      onClick={closeCommandPalette}
+    >
       <div
         className="w-[600px] max-w-[90vw] bg-[#252526] border border-[#454545] rounded-lg shadow-2xl overflow-hidden"
         onClick={e => e.stopPropagation()}
         style={{ animation: 'palette-in 100ms ease' }}
       >
         {/* Input */}
-        <div className="flex items-center px-3 py-2 border-b border-[#333]">
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-[#333]">
+          <span className="text-[11px] text-[#555] flex-shrink-0">{modeHint}</span>
           <input
             ref={inputRef}
             type="text"
@@ -121,12 +157,18 @@ export default function CommandPalette({ openFiles, onOpenFile }) {
             placeholder={placeholder}
             className="flex-1 bg-transparent text-[13px] text-[#d4d4d4] placeholder-[#555] outline-none"
           />
+          {items.length > 0 && (
+            <span className="text-[11px] text-[#555] flex-shrink-0">{items.length} results</span>
+          )}
         </div>
 
-        {/* Mode hint */}
+        {/* Hint row */}
         {!query && mode === 'command' && (
-          <div className="px-3 py-1 text-[11px] text-[#555] border-b border-[#333]">
-            Type to search commands · <kbd className="bg-[#3a3a3a] px-1 rounded">↑↓</kbd> navigate · <kbd className="bg-[#3a3a3a] px-1 rounded">Enter</kbd> run · <kbd className="bg-[#3a3a3a] px-1 rounded">Esc</kbd> close
+          <div className="px-3 py-1 text-[11px] text-[#555] border-b border-[#333] flex gap-3">
+            <span><kbd className="bg-[#3a3a3a] px-1 rounded">↑↓</kbd> navigate</span>
+            <span><kbd className="bg-[#3a3a3a] px-1 rounded">Enter</kbd> run</span>
+            <span><kbd className="bg-[#3a3a3a] px-1 rounded">Esc</kbd> close</span>
+            <span className="ml-auto">type <kbd className="bg-[#3a3a3a] px-1 rounded">@</kbd> symbols · <kbd className="bg-[#3a3a3a] px-1 rounded">:</kbd> line</span>
           </div>
         )}
 
@@ -135,6 +177,11 @@ export default function CommandPalette({ openFiles, onOpenFile }) {
           {items.length === 0 && query && (
             <div className="px-4 py-3 text-[13px] text-[#555]">No results for "{query}"</div>
           )}
+          {items.length === 0 && !query && mode !== 'command' && (
+            <div className="px-4 py-3 text-[13px] text-[#555]">
+              {mode === 'file' ? 'No files open. Open a folder first.' : 'Type to search…'}
+            </div>
+          )}
           {items.map((item, i) => (
             <button
               key={item.id}
@@ -142,19 +189,12 @@ export default function CommandPalette({ openFiles, onOpenFile }) {
               className={`w-full flex items-center justify-between px-4 py-2 text-[13px] text-left transition-colors
                 ${i === selected ? 'bg-[#094771] text-white' : 'text-[#cccccc] hover:bg-[#2a2d2e]'}`}
             >
-              <span className="flex-1 truncate">
+              <span className="flex-1 truncate min-w-0">
                 {highlight(item.label, query)}
               </span>
-              {item.shortcut && (
-                <span className={`text-[11px] ml-4 flex-shrink-0 ${i === selected ? 'text-[#aaa]' : 'text-[#858585]'}`}>
-                  {item.shortcut}
-                </span>
-              )}
-              {item.description && (
-                <span className={`text-[11px] ml-4 flex-shrink-0 truncate max-w-[200px] ${i === selected ? 'text-[#aaa]' : 'text-[#555]'}`}>
-                  {item.description}
-                </span>
-              )}
+              <span className={`text-[11px] ml-4 flex-shrink-0 truncate max-w-[240px] text-right ${i === selected ? 'text-[#aaa]' : 'text-[#555]'}`}>
+                {item.shortcut || item.description || ''}
+              </span>
             </button>
           ))}
         </div>

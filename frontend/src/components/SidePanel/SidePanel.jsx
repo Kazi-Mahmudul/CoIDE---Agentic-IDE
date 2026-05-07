@@ -69,7 +69,7 @@ export default function SidePanel({ tree, activeFilePath, externalRoot, onFileOp
           />
         )
       case 'search':
-        return <SearchPanel onFileOpen={(path, line) => onFileOpen({ path, content: '' }, line)} />
+        return <SearchPanel onFileOpen={(path, line) => onFileOpen(path, line)} />
       case 'git':
         return (
           <div className="flex flex-col items-center justify-center h-full text-center px-4">

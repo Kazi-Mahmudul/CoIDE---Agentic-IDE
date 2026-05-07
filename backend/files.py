@@ -138,6 +138,41 @@ async def delete_file(path: str = Query(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/files/search")
+async def search_files(q: str = Query(..., description="Search query")):
+    """Full-text search across all workspace files."""
+    if not q.strip():
+        return {"results": []}
+
+    results = []
+    max_results = 100
+
+    for root, dirs, files in os.walk(WORKSPACE_DIR):
+        dirs[:] = [d for d in dirs if not d.startswith('.') and d not in (
+            'node_modules', '__pycache__', 'venv', '.git', '.venv', 'dist', '.next', 'build'
+        )]
+        for fname in files:
+            if len(results) >= max_results:
+                break
+            fpath = os.path.join(root, fname)
+            rel = os.path.relpath(fpath, WORKSPACE_DIR).replace("\\", "/")
+            try:
+                with open(fpath, "r", encoding="utf-8", errors="strict") as f:
+                    for line_no, line in enumerate(f, 1):
+                        if q.lower() in line.lower():
+                            results.append({
+                                "file": rel,
+                                "line": line_no,
+                                "text": line.rstrip(),
+                            })
+                            if len(results) >= max_results:
+                                break
+            except (UnicodeDecodeError, PermissionError, OSError):
+                continue
+
+    return {"results": results, "total": len(results)}
+
+
 class RenameBody(BaseModel):
     old_path: str
     new_path: str

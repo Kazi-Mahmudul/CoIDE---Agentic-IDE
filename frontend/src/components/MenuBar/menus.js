@@ -1,9 +1,9 @@
-// All menu definitions. Actions receive the store + editorRef as context.
-// separator: true = divider line
-// submenu: [...] = nested menu
+// All menu definitions.
+// editorRef.current.trigger(actionId) calls Monaco's trigger('menu', actionId, null)
 
 export function buildMenus({ store, editorRef, openCommandPalette, toast }) {
   const ni = (label) => () => toast(`${label} — not yet implemented`, { icon: '🚧' })
+  const ed = (actionId) => () => editorRef?.current?.trigger(actionId)
 
   return [
     {
@@ -28,38 +28,39 @@ export function buildMenus({ store, editorRef, openCommandPalette, toast }) {
     {
       label: 'Edit',
       items: [
-        { label: 'Undo', shortcut: 'Ctrl+Z', action: () => editorRef?.current?.trigger('undo') },
-        { label: 'Redo', shortcut: 'Ctrl+Y', action: () => editorRef?.current?.trigger('redo') },
+        { label: 'Undo', shortcut: 'Ctrl+Z', action: ed('undo') },
+        { label: 'Redo', shortcut: 'Ctrl+Y', action: ed('redo') },
         { separator: true },
-        { label: 'Cut', shortcut: 'Ctrl+X', action: () => editorRef?.current?.trigger('cut') },
-        { label: 'Copy', shortcut: 'Ctrl+C', action: () => editorRef?.current?.trigger('copy') },
-        { label: 'Paste', shortcut: 'Ctrl+V', action: ni('Paste') },
+        { label: 'Cut', shortcut: 'Ctrl+X', action: ed('editor.action.clipboardCutAction') },
+        { label: 'Copy', shortcut: 'Ctrl+C', action: ed('editor.action.clipboardCopyAction') },
+        { label: 'Paste', shortcut: 'Ctrl+V', action: ed('editor.action.clipboardPasteAction') },
         { separator: true },
-        { label: 'Find', shortcut: 'Ctrl+F', action: () => editorRef?.current?.trigger('actions.find') },
-        { label: 'Replace', shortcut: 'Ctrl+H', action: () => editorRef?.current?.trigger('editor.action.startFindReplaceAction') },
+        { label: 'Find', shortcut: 'Ctrl+F', action: ed('actions.find') },
+        { label: 'Replace', shortcut: 'Ctrl+H', action: ed('editor.action.startFindReplaceAction') },
         { label: 'Find in Files', shortcut: 'Ctrl+Shift+F', action: () => { store.setActivityTab('search'); store.openSidePanel() } },
         { separator: true },
         { label: 'Go to Line...', shortcut: 'Ctrl+G', action: () => openCommandPalette(':') },
-        { label: 'Select All', shortcut: 'Ctrl+A', action: () => editorRef?.current?.trigger('selectAll') },
+        { label: 'Select All', shortcut: 'Ctrl+A', action: ed('editor.action.selectAll') },
         { separator: true },
-        { label: 'Toggle Line Comment', shortcut: 'Ctrl+/', action: () => editorRef?.current?.trigger('editor.action.commentLine') },
-        { label: 'Format Document', shortcut: 'Shift+Alt+F', action: () => editorRef?.current?.trigger('editor.action.formatDocument') },
+        { label: 'Toggle Line Comment', shortcut: 'Ctrl+/', action: ed('editor.action.commentLine') },
+        { label: 'Toggle Block Comment', shortcut: 'Shift+Alt+A', action: ed('editor.action.blockComment') },
+        { label: 'Format Document', shortcut: 'Shift+Alt+F', action: ed('editor.action.formatDocument') },
       ],
     },
     {
       label: 'Selection',
       items: [
-        { label: 'Select All', shortcut: 'Ctrl+A', action: () => editorRef?.current?.trigger('selectAll') },
+        { label: 'Select All', shortcut: 'Ctrl+A', action: ed('editor.action.selectAll') },
         { separator: true },
-        { label: 'Copy Line Up', shortcut: 'Shift+Alt+Up', action: () => editorRef?.current?.trigger('editor.action.copyLinesUpAction') },
-        { label: 'Copy Line Down', shortcut: 'Shift+Alt+Down', action: () => editorRef?.current?.trigger('editor.action.copyLinesDownAction') },
-        { label: 'Move Line Up', shortcut: 'Alt+Up', action: () => editorRef?.current?.trigger('editor.action.moveLinesUpAction') },
-        { label: 'Move Line Down', shortcut: 'Alt+Down', action: () => editorRef?.current?.trigger('editor.action.moveLinesDownAction') },
+        { label: 'Copy Line Up', shortcut: 'Shift+Alt+Up', action: ed('editor.action.copyLinesUpAction') },
+        { label: 'Copy Line Down', shortcut: 'Shift+Alt+Down', action: ed('editor.action.copyLinesDownAction') },
+        { label: 'Move Line Up', shortcut: 'Alt+Up', action: ed('editor.action.moveLinesUpAction') },
+        { label: 'Move Line Down', shortcut: 'Alt+Down', action: ed('editor.action.moveLinesDownAction') },
         { separator: true },
-        { label: 'Add Cursor Above', shortcut: 'Ctrl+Alt+Up', action: () => editorRef?.current?.trigger('editor.action.insertCursorAbove') },
-        { label: 'Add Cursor Below', shortcut: 'Ctrl+Alt+Down', action: () => editorRef?.current?.trigger('editor.action.insertCursorBelow') },
-        { label: 'Add Next Occurrence', shortcut: 'Ctrl+D', action: () => editorRef?.current?.trigger('editor.action.addSelectionToNextFindMatch') },
-        { label: 'Select All Occurrences', shortcut: 'Ctrl+Shift+L', action: () => editorRef?.current?.trigger('editor.action.selectHighlights') },
+        { label: 'Add Cursor Above', shortcut: 'Ctrl+Alt+Up', action: ed('editor.action.insertCursorAbove') },
+        { label: 'Add Cursor Below', shortcut: 'Ctrl+Alt+Down', action: ed('editor.action.insertCursorBelow') },
+        { label: 'Add Next Occurrence', shortcut: 'Ctrl+D', action: ed('editor.action.addSelectionToNextFindMatch') },
+        { label: 'Select All Occurrences', shortcut: 'Ctrl+Shift+L', action: ed('editor.action.selectHighlights') },
       ],
     },
     {
@@ -103,11 +104,11 @@ export function buildMenus({ store, editorRef, openCommandPalette, toast }) {
         { label: 'Go to Symbol...', shortcut: 'Ctrl+Shift+O', action: () => openCommandPalette('@') },
         { label: 'Go to Line/Column...', shortcut: 'Ctrl+G', action: () => openCommandPalette(':') },
         { separator: true },
-        { label: 'Go to Definition', shortcut: 'F12', action: () => editorRef?.current?.trigger('editor.action.revealDefinition') },
-        { label: 'Go to References', shortcut: 'Shift+F12', action: () => editorRef?.current?.trigger('editor.action.goToReferences') },
+        { label: 'Go to Definition', shortcut: 'F12', action: ed('editor.action.revealDefinition') },
+        { label: 'Go to References', shortcut: 'Shift+F12', action: ed('editor.action.goToReferences') },
         { separator: true },
-        { label: 'Next Problem', shortcut: 'F8', action: () => editorRef?.current?.trigger('editor.action.marker.next') },
-        { label: 'Previous Problem', shortcut: 'Shift+F8', action: () => editorRef?.current?.trigger('editor.action.marker.prev') },
+        { label: 'Next Problem', shortcut: 'F8', action: ed('editor.action.marker.next') },
+        { label: 'Previous Problem', shortcut: 'Shift+F8', action: ed('editor.action.marker.prev') },
       ],
     },
     {

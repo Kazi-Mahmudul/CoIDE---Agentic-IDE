@@ -21,42 +21,61 @@ function getLanguage(path) {
   return LANG_MAP[ext] || 'plaintext'
 }
 
+// Keep a stable ref to the latest save function to avoid stale closures
 const Editor = forwardRef(function Editor({ onCursorChange, onMarkersChange }, ref) {
   const { openFiles, activeFileId, markFileModified, updateFileContent, fontSize } = useIDEStore()
   const monacoRef = useRef(null)
   const editorRef = useRef(null)
+  // Always-fresh refs so imperative handle never goes stale
+  const activeFileRef = useRef(null)
+  const markFileModifiedRef = useRef(markFileModified)
+  markFileModifiedRef.current = markFileModified
 
-  const activeFile = openFiles.find(f => f.id === activeFileId)
-
-  // Expose imperative API to parent
-  useImperativeHandle(ref, () => ({
-    save: () => handleSave(),
-    trigger: (actionId) => {
-      editorRef.current?.trigger('keyboard', actionId, null)
-    },
-    getAction: (id) => editorRef.current?.getAction(id),
-    focus: () => editorRef.current?.focus(),
-  }), [activeFile]) // eslint-disable-line react-hooks/exhaustive-deps
+  const activeFile = openFiles.find(f => f.id === activeFileId) || null
+  activeFileRef.current = activeFile
 
   const handleSave = useCallback(async () => {
-    if (!activeFile) return
+    const file = activeFileRef.current
+    if (!file) return
     try {
-      if (activeFile.externalRoot) {
-        await writeExternalFile(activeFile.externalRoot, activeFile.path, activeFile.content || '')
+      if (file.externalRoot) {
+        await writeExternalFile(file.externalRoot, file.path, file.content || '')
       } else {
-        await writeFile(activeFile.path, activeFile.content || '')
+        await writeFile(file.path, file.content || '')
       }
-      markFileModified(activeFile.id, false)
+      markFileModifiedRef.current(file.id, false)
       toast.success('Saved', { duration: 1500 })
     } catch (e) {
       toast.error(`Save failed: ${e.message}`)
     }
-  }, [activeFile, markFileModified])
+  }, []) // stable — uses refs
+
+  // Expose imperative API
+  useImperativeHandle(ref, () => ({
+    save: handleSave,
+    // Trigger a Monaco editor action by ID
+    trigger: (actionId) => {
+      if (!editorRef.current) return
+      // Some actions need the editor focused first
+      editorRef.current.focus()
+      editorRef.current.trigger('menu', actionId, null)
+    },
+    getAction: (id) => editorRef.current?.getAction(id),
+    focus: () => editorRef.current?.focus(),
+    // Go to a specific line number
+    goToLine: (lineNumber) => {
+      if (!editorRef.current || !lineNumber) return
+      editorRef.current.revealLineInCenter(lineNumber)
+      editorRef.current.setPosition({ lineNumber, column: 1 })
+      editorRef.current.focus()
+    },
+  }), [handleSave])
 
   const handleMount = useCallback((editor, monaco) => {
     editorRef.current = editor
     monacoRef.current = monaco
 
+    // Ctrl+S to save
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, handleSave)
 
     editor.updateOptions({
@@ -82,7 +101,7 @@ const Editor = forwardRef(function Editor({ onCursorChange, onMarkersChange }, r
       onCursorChange?.({ lineNumber: e.position.lineNumber, column: e.position.column })
     })
 
-    // Report markers
+    // Report markers for Problems panel
     monaco.editor.onDidChangeMarkers(() => {
       const model = editor.getModel()
       if (model) {
@@ -97,12 +116,25 @@ const Editor = forwardRef(function Editor({ onCursorChange, onMarkersChange }, r
     editorRef.current?.updateOptions({ fontSize })
   }, [fontSize])
 
+  // Sync Monaco theme with IDE theme
+  const { theme } = useIDEStore()
+  useEffect(() => {
+    if (monacoRef.current) {
+      monacoRef.current.editor.setTheme(theme === 'light' ? 'vs' : 'vs-dark')
+    }
+  }, [theme])
+
   // Sync content when active file changes
   useEffect(() => {
     if (!editorRef.current || !activeFile) return
     const model = editorRef.current.getModel()
-    if (model && model.getValue() !== (activeFile.content || '')) {
+    const current = model?.getValue()
+    if (model && current !== (activeFile.content || '')) {
       model.setValue(activeFile.content || '')
+    }
+    // Update language model
+    if (monacoRef.current && model) {
+      monacoRef.current.editor.setModelLanguage(model, getLanguage(activeFile.path))
     }
   }, [activeFileId]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -119,7 +151,9 @@ const Editor = forwardRef(function Editor({ onCursorChange, onMarkersChange }, r
           <div className="text-5xl mb-4 opacity-20">⌨</div>
           <div className="text-[#555]">Open a file to start editing</div>
           <div className="text-xs mt-2 text-[#444]">
-            Use the Explorer or <kbd className="bg-[#2d2d2d] px-1.5 py-0.5 rounded text-[#858585]">Ctrl+P</kbd> to open a file
+            Use the Explorer or{' '}
+            <kbd className="bg-[#2d2d2d] px-1.5 py-0.5 rounded text-[#858585]">Ctrl+P</kbd>{' '}
+            to open a file
           </div>
         </div>
       </div>
@@ -131,7 +165,7 @@ const Editor = forwardRef(function Editor({ onCursorChange, onMarkersChange }, r
       height="100%"
       language={getLanguage(activeFile.path)}
       value={activeFile.content || ''}
-      theme="vs-dark"
+      theme={theme === 'light' ? 'vs' : 'vs-dark'}
       onChange={handleChange}
       onMount={handleMount}
       options={{

@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from files import router as files_router
 from agent import router as agent_router
 from terminal import router as terminal_router
+from chat.router import router as chat_router
 
 logging.basicConfig(level=logging.INFO)
 
@@ -31,6 +32,7 @@ app.add_middleware(
 app.include_router(files_router)
 app.include_router(agent_router)
 app.include_router(terminal_router)
+app.include_router(chat_router)
 
 
 @app.on_event("startup")
@@ -42,6 +44,26 @@ async def startup():
 @app.get("/")
 async def root():
     return {"status": "ok", "app": "Coide Agentic IDE"}
+
+
+@app.get("/git/branch")
+async def git_branch():
+    """Return current git branch name for the workspace."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=WORKSPACE_DIR,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        if result.returncode == 0:
+            branch = result.stdout.strip()
+            return {"branch": branch}
+    except Exception:
+        pass
+    return {"branch": None}
 
 
 if __name__ == "__main__":

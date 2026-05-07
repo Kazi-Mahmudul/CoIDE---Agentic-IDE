@@ -1,26 +1,16 @@
 ﻿
 /**
  * App.jsx — VS Code / Cursor-style IDE shell
- *
- * Layout:
- *   MenuBar (32px)
- *   TabBar  (36px)
- *   [ActivityBar 48px] [SidePanel?] [Editor flex] [ChatPanel 320px]
- *   BottomPanel (collapsible)
- *   StatusBar (22px)
- *
- * CommandPalette overlays everything.
  */
 import React, { useRef, useCallback, useEffect, useState } from 'react'
 import { Toaster, toast } from 'react-hot-toast'
 
 import { useIDEStore } from './store/useIDEStore.js'
-import { useCommandStore } from './store/useCommandStore.js'
 import { registerCommands } from './components/CommandPalette/commands.js'
 import { buildMenus } from './components/MenuBar/menus.js'
 import { useKeyboard } from './hooks/useKeyboard.js'
 import { useFileTree } from './hooks/useFileTree.js'
-import { readFile, readExternalFile } from './api.js'
+import { readFile, readExternalFile, writeFile } from './api.js'
 
 import MenuBar from './components/MenuBar/MenuBar.jsx'
 import TabBar from './components/TabBar/TabBar.jsx'
@@ -30,17 +20,20 @@ import Editor from './components/Editor/Editor.jsx'
 import BottomPanel from './components/BottomPanel/BottomPanel.jsx'
 import StatusBar from './components/StatusBar/StatusBar.jsx'
 import CommandPalette from './components/CommandPalette/CommandPalette.jsx'
-import ChatPanel from './components/ChatPanel.jsx'
+import ChatPanel from './components/ChatPanel/ChatPanel.jsx'
 import ConfigModal from './components/ConfigModal.jsx'
 import FolderPicker from './components/FolderPicker.jsx'
+
+// Counter for untitled files
+let untitledCounter = 1
 
 export default function App() {
   const store = useIDEStore()
   const {
-    openFiles, activeFileId, openFile, setActiveFile,
+    openFiles, activeFileId, openFile, setActiveFile, closeFile,
     externalRoot, setExternalRoot,
     openCommandPalette, closeCommandPalette,
-    theme,
+    theme, bottomPanelOpen, openBottomPanel,
   } = store
 
   const editorRef = useRef(null)
@@ -73,20 +66,31 @@ export default function App() {
   // ── Apply theme to document ─────────────────────────────────────────────
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
-    document.body.style.background = theme === 'light' ? '#ffffff' : '#1e1e1e'
+    if (theme === 'light') {
+      document.body.style.background = '#f3f3f3'
+      document.body.style.color = '#333333'
+    } else {
+      document.body.style.background = '#1e1e1e'
+      document.body.style.color = '#cccccc'
+    }
   }, [theme])
 
   // ── Open file handler ───────────────────────────────────────────────────
   const handleFileOpen = useCallback(async (fileOrPath, goToLine) => {
-    // fileOrPath can be { path, content?, externalRoot? } or a string path
     const path = typeof fileOrPath === 'string' ? fileOrPath : fileOrPath?.path
     if (!path) return
+
+    // Handle go-to-line only (no path)
+    if (fileOrPath?._goToLine) {
+      editorRef.current?.goToLine(fileOrPath._goToLine)
+      return
+    }
 
     // Check if already open
     const existing = openFiles.find(f => f.path === path)
     if (existing) {
       setActiveFile(existing.id)
-      if (goToLine) editorRef.current?.trigger('revealLine:' + goToLine)
+      if (goToLine) setTimeout(() => editorRef.current?.goToLine(goToLine), 50)
       return
     }
 
@@ -94,7 +98,7 @@ export default function App() {
       let content = fileOrPath?.content
       const extRoot = fileOrPath?.externalRoot || externalRoot
 
-      if (content === undefined) {
+      if (content === undefined || content === '') {
         if (extRoot) {
           const data = await readExternalFile(extRoot, path)
           content = data.content
@@ -113,10 +117,26 @@ export default function App() {
         language: ext,
         externalRoot: extRoot || null,
       })
+
+      if (goToLine) setTimeout(() => editorRef.current?.goToLine(goToLine), 100)
     } catch (e) {
       toast.error(`Cannot open file: ${e.message}`)
     }
   }, [openFiles, openFile, setActiveFile, externalRoot])
+
+  // ── New untitled file ───────────────────────────────────────────────────
+  const handleNewFile = useCallback(() => {
+    const name = `Untitled-${untitledCounter++}`
+    openFile({
+      id: `__untitled__${name}`,
+      path: name,
+      label: name,
+      content: '',
+      language: 'plaintext',
+      modified: true,
+      isUntitled: true,
+    })
+  }, [openFile])
 
   // ── Agent file write handler ────────────────────────────────────────────
   const handleAgentFileWrite = useCallback(async (path) => {
@@ -142,9 +162,9 @@ export default function App() {
   // ── Command palette open helper ─────────────────────────────────────────
   const handleOpenCommandPalette = useCallback((prefix = '>') => {
     if (prefix === 'open-folder') { setFolderPickerOpen(true); return }
-    if (prefix === 'new-file') { toast('New File — not yet implemented', { icon: '🚧' }); return }
+    if (prefix === 'new-file') { handleNewFile(); return }
     openCommandPalette(prefix)
-  }, [openCommandPalette])
+  }, [openCommandPalette, handleNewFile])
 
   // ── Keyboard shortcuts ──────────────────────────────────────────────────
   useKeyboard(editorRef, handleOpenCommandPalette)
@@ -162,10 +182,27 @@ export default function App() {
     handleFileOpen(path, line)
   }, [handleFileOpen])
 
+  // ── Collect all workspace files for command palette file search ─────────
+  const allWorkspaceFiles = useCallback(() => {
+    const files = []
+    const walk = (nodes) => {
+      for (const n of nodes) {
+        if (n.type === 'file') files.push(n)
+        if (n.children) walk(n.children)
+      }
+    }
+    walk(tree)
+    return files
+  }, [tree])
+
   return (
     <div
-      className="flex flex-col h-screen w-screen overflow-hidden text-[#cccccc]"
-      style={{ background: '#1e1e1e', fontSize: 13 }}
+      className="flex flex-col h-screen w-screen overflow-hidden"
+      style={{
+        background: theme === 'light' ? '#f3f3f3' : '#1e1e1e',
+        color: theme === 'light' ? '#333333' : '#cccccc',
+        fontSize: 13,
+      }}
     >
       <Toaster
         position="bottom-right"
@@ -185,21 +222,22 @@ export default function App() {
       />
       <CommandPalette
         openFiles={openFiles}
+        workspaceFiles={allWorkspaceFiles()}
         onOpenFile={handleFileOpen}
       />
 
-      {/* ── Menu bar ─────────────────────────────────────────────────────── */}
+      {/* Menu bar */}
       <MenuBar menus={menus} />
 
-      {/* ── Tab bar ──────────────────────────────────────────────────────── */}
+      {/* Tab bar */}
       <TabBar />
 
-      {/* ── Main area ────────────────────────────────────────────────────── */}
+      {/* Main area */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Activity bar */}
         <ActivityBar />
 
-        {/* Side panel (collapsible) */}
+        {/* Side panel */}
         <SidePanel
           tree={tree}
           activeFilePath={activeFile?.path}
@@ -227,29 +265,35 @@ export default function App() {
           />
 
           {/* Reopen bar when bottom panel is closed */}
-          {!store.bottomPanelOpen && (
-            <div className="flex-shrink-0 h-6 flex items-center px-3 bg-[#1e1e1e] border-t border-[#333]">
-              <button
-                onClick={() => store.openBottomPanel()}
-                className="text-[10px] text-[#555] hover:text-[#858585] transition-colors"
-              >
+          {!bottomPanelOpen && (
+            <div
+              className="flex-shrink-0 h-6 flex items-center px-3 border-t border-[#333] cursor-pointer hover:bg-[#2a2d2e]"
+              style={{ background: theme === 'light' ? '#f3f3f3' : '#1e1e1e' }}
+              onClick={openBottomPanel}
+            >
+              <span className="text-[10px] text-[#555] hover:text-[#858585] transition-colors">
                 ▲ Terminal
-              </button>
+              </span>
             </div>
           )}
         </div>
 
         {/* Right: Agent chat */}
-        <div className="w-80 flex-shrink-0 border-l border-[#333] flex flex-col bg-[#252526]">
+        <div
+          className="w-80 flex-shrink-0 border-l border-[#333] flex flex-col"
+          style={{ background: theme === 'light' ? '#f8f8f8' : '#1e1e1e' }}
+        >
           <ChatPanel
             activeFile={activeFile}
             tree={tree}
+            markers={markers}
+            onFileOpen={handleFileOpen}
             onFileWrite={handleAgentFileWrite}
           />
         </div>
       </div>
 
-      {/* ── Status bar ───────────────────────────────────────────────────── */}
+      {/* Status bar */}
       <StatusBar
         cursorPosition={cursorPosition}
         language={language}
