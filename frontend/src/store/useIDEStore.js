@@ -1,9 +1,8 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { applyTheme } from '../themes.js'
 
 const STORAGE_KEY = 'coide-ide-state'
 
-// Persisted keys (layout state)
 const PERSISTED = [
   'sidePanelOpen', 'sidePanelWidth', 'activeActivityTab',
   'bottomPanelOpen', 'bottomPanelHeight', 'activeBottomTab',
@@ -46,6 +45,9 @@ const defaults = {
 export const useIDEStore = create((set, get) => {
   const saved = loadPersisted()
   const initial = { ...defaults, ...saved }
+
+  // Apply saved theme immediately on store creation
+  applyTheme(initial.theme || 'dark')
 
   const persist = (fn) => {
     fn()
@@ -129,8 +131,15 @@ export const useIDEStore = create((set, get) => {
     })),
 
     // ── Theme ───────────────────────────────────────────────────────────────
-    toggleTheme: () => persist(() => set(s => ({ theme: s.theme === 'dark' ? 'light' : 'dark' }))),
-    setTheme: (t) => persist(() => set({ theme: t })),
+    toggleTheme: () => persist(() => set(s => {
+      const next = s.theme === 'dark' ? 'light' : 'dark'
+      applyTheme(next)
+      return { theme: next }
+    })),
+    setTheme: (t) => persist(() => set(() => {
+      applyTheme(t)
+      return { theme: t }
+    })),
 
     // ── Font size ───────────────────────────────────────────────────────────
     zoomIn: () => persist(() => set(s => ({ fontSize: Math.min(24, s.fontSize + 1) }))),

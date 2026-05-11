@@ -10,93 +10,88 @@ export default function FolderPicker({ open, onClose, onSelect }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [manualPath, setManualPath] = useState('')
-  const [showManual, setShowManual] = useState(false)
 
   const navigate = useCallback(async (path) => {
-    setLoading(true)
-    setError(null)
+    setLoading(true); setError(null)
     try {
       const data = await listDirectory(path)
-      setCurrentPath(data.path)
-      setParent(data.parent)
-      setItems(data.items)
-      setManualPath(data.path)
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setLoading(false)
-    }
+      setCurrentPath(data.path); setParent(data.parent)
+      setItems(data.items); setManualPath(data.path)
+    } catch (e) { setError(e.message) }
+    finally { setLoading(false) }
   }, [])
 
   useEffect(() => {
     if (!open) return
     getFilesystemRoots().then(data => {
       setRoots(data.roots || [])
-      // Navigate to home directory by default
-      const home = navigator.platform.includes('Win')
-        ? (data.roots[0]?.path || 'C:/')
-        : '/home'
+      const home = navigator.platform.includes('Win') ? (data.roots[0]?.path || 'C:/') : '/home'
       navigate(home).catch(() => navigate(data.roots[0]?.path || '/'))
     }).catch(() => {})
   }, [open, navigate])
 
-  const handleManualGo = () => {
-    if (manualPath.trim()) navigate(manualPath.trim())
-  }
-
   if (!open) return null
+
+  const s = {
+    bg: 'var(--bg-panel)', border: 'var(--border-light)',
+    text: 'var(--text-primary)', muted: 'var(--text-muted)',
+    input: 'var(--bg-input)', hover: 'var(--bg-hover)',
+    accent: 'var(--accent)',
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="bg-[#252526] border border-[#3c3c3c] rounded-lg shadow-2xl w-[560px] max-w-[95vw] flex flex-col max-h-[80vh]">
+      <div className="rounded-lg shadow-2xl w-[560px] max-w-[95vw] flex flex-col max-h-[80vh]"
+        style={{ background: s.bg, border: `1px solid ${s.border}` }}>
+
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#3c3c3c] flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-3 flex-shrink-0"
+          style={{ borderBottom: `1px solid ${s.border}` }}>
           <div className="flex items-center gap-2">
             <FolderOpen size={15} className="text-yellow-400" />
-            <span className="text-sm font-semibold text-[#d4d4d4]">Open Folder</span>
+            <span className="text-sm font-semibold" style={{ color: 'var(--text-bright)' }}>Open Folder</span>
           </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-[#3a3a3a] text-[#858585] hover:text-[#d4d4d4]">
+          <button onClick={onClose} className="p-1 rounded transition-colors" style={{ color: s.muted }}
+            onMouseEnter={e => e.currentTarget.style.background = s.hover}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
             <X size={15} />
           </button>
         </div>
 
         {/* Path bar */}
-        <div className="flex items-center gap-2 px-4 py-2 border-b border-[#3c3c3c] flex-shrink-0 bg-[#1e1e1e]">
-          <button
-            onClick={() => parent && navigate(parent)}
-            disabled={!parent}
-            className="p-1 rounded hover:bg-[#3a3a3a] text-[#858585] hover:text-[#d4d4d4] disabled:opacity-30 disabled:cursor-default"
-            title="Go up"
-          >
+        <div className="flex items-center gap-2 px-4 py-2 flex-shrink-0"
+          style={{ background: 'var(--bg-app)', borderBottom: `1px solid ${s.border}` }}>
+          <button onClick={() => parent && navigate(parent)} disabled={!parent}
+            className="p-1 rounded transition-colors disabled:opacity-30" style={{ color: s.muted }}
+            onMouseEnter={e => e.currentTarget.style.background = s.hover}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
             <ArrowLeft size={14} />
           </button>
-          <input
-            type="text"
-            value={manualPath}
-            onChange={e => setManualPath(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleManualGo()}
+          <input type="text" value={manualPath} onChange={e => setManualPath(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && navigate(manualPath.trim())}
             placeholder="Type a path and press Enter…"
-            className="flex-1 bg-[#3c3c3c] border border-[#555] rounded px-2 py-1 text-xs text-[#d4d4d4] placeholder-[#555] focus:outline-none focus:border-[#007acc]"
-          />
-          <button
-            onClick={handleManualGo}
-            className="px-2 py-1 text-xs bg-[#3c3c3c] hover:bg-[#4a4a4a] text-[#d4d4d4] rounded border border-[#555]"
-          >
+            className="flex-1 rounded px-2 py-1 text-xs outline-none"
+            style={{ background: s.input, border: `1px solid ${s.border}`, color: 'var(--text-bright)' }}
+            onFocus={e => e.target.style.borderColor = s.accent}
+            onBlur={e => e.target.style.borderColor = s.border} />
+          <button onClick={() => navigate(manualPath.trim())}
+            className="px-2 py-1 text-xs rounded transition-colors"
+            style={{ background: s.input, border: `1px solid ${s.border}`, color: s.text }}>
             Go
           </button>
         </div>
 
         {/* Drive roots */}
         {roots.length > 1 && (
-          <div className="flex gap-1 px-4 py-2 border-b border-[#3c3c3c] flex-shrink-0 flex-wrap">
+          <div className="flex gap-1 px-4 py-2 flex-shrink-0 flex-wrap"
+            style={{ borderBottom: `1px solid ${s.border}` }}>
             {roots.map(r => (
-              <button
-                key={r.path}
-                onClick={() => navigate(r.path)}
-                className="flex items-center gap-1 px-2 py-1 text-xs bg-[#3c3c3c] hover:bg-[#094771] text-[#d4d4d4] rounded border border-[#555] transition-colors"
-              >
-                <HardDrive size={11} />
-                {r.name}
+              <button key={r.path} onClick={() => navigate(r.path)}
+                className="flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors"
+                style={{ background: s.input, border: `1px solid ${s.border}`, color: s.text }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-selected)'}
+                onMouseLeave={e => e.currentTarget.style.background = s.input}>
+                <HardDrive size={11} />{r.name}
               </button>
             ))}
           </div>
@@ -104,62 +99,39 @@ export default function FolderPicker({ open, onClose, onSelect }) {
 
         {/* File list */}
         <div className="flex-1 overflow-y-auto min-h-0">
-          {loading && (
-            <div className="flex items-center justify-center py-8 text-[#555] text-sm">
-              Loading…
-            </div>
-          )}
-          {error && (
-            <div className="px-4 py-3 text-red-400 text-xs">{error}</div>
-          )}
-          {!loading && !error && items.length === 0 && (
-            <div className="px-4 py-3 text-[#555] text-xs italic">Empty folder</div>
-          )}
+          {loading && <div className="flex items-center justify-center py-8 text-sm" style={{ color: s.muted }}>Loading…</div>}
+          {error && <div className="px-4 py-3 text-xs text-red-400">{error}</div>}
+          {!loading && !error && items.length === 0 && <div className="px-4 py-3 text-xs italic" style={{ color: s.muted }}>Empty folder</div>}
           {!loading && !error && items.map(item => (
-            <button
-              key={item.path}
+            <button key={item.path}
               onClick={() => item.type === 'directory' ? navigate(item.path) : null}
-              className={`w-full flex items-center gap-2 px-4 py-1.5 text-xs text-left transition-colors
-                ${item.type === 'directory'
-                  ? 'text-[#d4d4d4] hover:bg-[#2a2d2e] cursor-pointer'
-                  : 'text-[#858585] cursor-default'
-                }`}
-            >
+              className="w-full flex items-center gap-2 px-4 py-1.5 text-xs text-left transition-colors"
+              style={{ color: item.type === 'directory' ? s.text : s.muted, cursor: item.type === 'directory' ? 'pointer' : 'default' }}
+              onMouseEnter={e => { if (item.type === 'directory') e.currentTarget.style.background = s.hover }}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
               {item.type === 'directory' ? (
-                <>
-                  <Folder size={13} className="text-yellow-400 flex-shrink-0" />
-                  <span className="flex-1 truncate">{item.name}</span>
-                  <ChevronRight size={11} className="text-[#555] flex-shrink-0" />
-                </>
+                <><Folder size={13} className="text-yellow-400 flex-shrink-0" /><span className="flex-1 truncate">{item.name}</span><ChevronRight size={11} style={{ color: s.muted }} /></>
               ) : (
-                <>
-                  <span className="w-3 flex-shrink-0" />
-                  <span className="flex-1 truncate text-[#666]">{item.name}</span>
-                </>
+                <><span className="w-3 flex-shrink-0" /><span className="flex-1 truncate" style={{ color: s.muted }}>{item.name}</span></>
               )}
             </button>
           ))}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-4 py-3 border-t border-[#3c3c3c] flex-shrink-0 bg-[#1e1e1e]">
-          <div className="text-xs text-[#555] truncate flex-1 mr-4">
-            {currentPath || 'No folder selected'}
-          </div>
+        <div className="flex items-center justify-between px-4 py-3 flex-shrink-0"
+          style={{ borderTop: `1px solid ${s.border}`, background: 'var(--bg-app)' }}>
+          <div className="text-xs truncate flex-1 mr-4" style={{ color: s.muted }}>{currentPath || 'No folder selected'}</div>
           <div className="flex gap-2 flex-shrink-0">
-            <button
-              onClick={onClose}
-              className="px-3 py-1.5 text-xs text-[#858585] hover:text-[#d4d4d4] transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => currentPath && onSelect(currentPath)}
-              disabled={!currentPath}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[#007acc] hover:bg-[#0098ff] disabled:bg-[#3c3c3c] disabled:text-[#555] text-white rounded transition-colors"
-            >
-              <Check size={12} />
-              Open Folder
+            <button onClick={onClose} className="px-3 py-1.5 text-xs transition-colors" style={{ color: s.muted }}
+              onMouseEnter={e => e.currentTarget.style.color = s.text}
+              onMouseLeave={e => e.currentTarget.style.color = s.muted}>Cancel</button>
+            <button onClick={() => currentPath && onSelect(currentPath)} disabled={!currentPath}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white rounded transition-colors disabled:opacity-40"
+              style={{ background: s.accent }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-hover)'}
+              onMouseLeave={e => e.currentTarget.style.background = s.accent}>
+              <Check size={12} />Open Folder
             </button>
           </div>
         </div>

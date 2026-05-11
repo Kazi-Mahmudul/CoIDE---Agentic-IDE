@@ -9,7 +9,7 @@ import asyncio
 import shutil
 from pathlib import Path
 
-WORKSPACE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "workspace")
+from config import WORKSPACE_DIR
 
 
 def _safe_path(path: str) -> str:

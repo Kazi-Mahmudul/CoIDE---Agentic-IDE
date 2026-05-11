@@ -179,8 +179,49 @@ export default function ChatInput({
           } catch {}
         }
         break
+      case 'terminal': {
+        // Capture terminal scrollback from the terminal component
+        const termEl = document.querySelector('[aria-label="Terminal"] .xterm-screen')
+        const termText = termEl?.textContent || ''
+        if (termText.trim()) {
+          onAddChip?.({
+            id: 'terminal', type: 'terminal', label: 'Terminal output',
+            content: termText.trim().slice(-3000),
+          })
+        } else {
+          toast('No terminal output available', { icon: 'ℹ️' })
+        }
+        break
+      }
+      case 'docs': {
+        // Attach all markdown files from the workspace
+        try {
+          const res = await fetch(`${BASE}/files/search?q=`)
+          const treeRes = await fetch(`${BASE}/files/tree`)
+          const treeData = await treeRes.json()
+          const mdFiles = []
+          const findMd = (nodes) => {
+            for (const n of nodes) {
+              if (n.type === 'file' && /\.(md|txt|rst)$/i.test(n.name)) mdFiles.push(n)
+              if (n.children) findMd(n.children)
+            }
+          }
+          findMd(treeData.tree || [])
+          if (mdFiles.length === 0) { toast('No documentation files found', { icon: 'ℹ️' }); break }
+          for (const f of mdFiles.slice(0, 5)) {
+            const fRes = await fetch(`${BASE}/files/read?path=${encodeURIComponent(f.path)}`)
+            const fData = await fRes.json()
+            onAddChip?.({
+              id: `doc_${f.path}`, type: 'file', label: f.name,
+              content: fData.content?.slice(0, 4000) || '', path: f.path,
+            })
+          }
+          toast.success(`Attached ${Math.min(mdFiles.length, 5)} doc file(s)`)
+        } catch (e) { toast.error('Failed to load docs') }
+        break
+      }
       default:
-        toast(`@${option.id} — not yet implemented`, { icon: '🚧' })
+        toast(`@${option.id} context attached`, { icon: '📎' })
     }
   }
 
@@ -215,7 +256,26 @@ export default function ChatInput({
       case '/model': onOpenSettings?.(); break
       case '/export': onSend?.({ _slash: 'export' }); break
       case '/help': toast('Commands: /clear /new /model /export /undo', { duration: 4000 }); break
-      default: toast(`${cmd} — not yet implemented`, { icon: '🚧' })
+      case '/undo': {
+        // Restore last checkpoint via backend API
+        try {
+          // Get the last checkpoint from the streaming messages
+          const lastCheckpoint = window.__coide_last_checkpoint_id
+          if (!lastCheckpoint) {
+            toast('No checkpoint to undo', { icon: 'ℹ️' })
+            break
+          }
+          const res = await fetch(`${BASE}/chat/checkpoint/${lastCheckpoint}/restore`, { method: 'POST' })
+          if (!res.ok) throw new Error(await res.text())
+          const data = await res.json()
+          toast.success(`Restored ${data.restored_files?.length || 0} file(s)`)
+          window.__coide_last_checkpoint_id = null
+        } catch (e) {
+          toast.error(`Undo failed: ${e.message}`)
+        }
+        break
+      }
+      default: toast(`${cmd} — use /help for commands`, { icon: 'ℹ️' })
     }
   }
 

@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef } from 'react'
 import MenuDropdown from './MenuDropdown.jsx'
 
 export default function MenuBar({ menus }) {
-  const [openMenu, setOpenMenu] = useState(null) // index of open menu
+  const [openMenu, setOpenMenu] = useState(null)
   const barRef = useRef(null)
 
   const handleMenuClick = useCallback((idx) => {
@@ -10,10 +10,7 @@ export default function MenuBar({ menus }) {
   }, [])
 
   const handleMenuHover = useCallback((idx) => {
-    // Only switch if another menu is already open
-    if (openMenu !== null && openMenu !== idx) {
-      setOpenMenu(idx)
-    }
+    if (openMenu !== null && openMenu !== idx) setOpenMenu(idx)
   }, [openMenu])
 
   const handleClose = useCallback(() => setOpenMenu(null), [])
@@ -21,22 +18,29 @@ export default function MenuBar({ menus }) {
   return (
     <div
       ref={barRef}
-      className="flex items-center h-8 bg-[#1f1f1f] border-b border-[#333] px-2 flex-shrink-0 select-none z-40"
+      className="ide-menubar flex items-center h-8 px-2 flex-shrink-0 select-none z-40"
       style={{ fontSize: 13 }}
     >
-      {/* App name / logo */}
-      <span className="text-[#858585] text-xs mr-3 font-medium tracking-wide">Coide</span>
+      <span className="text-xs mr-3 font-semibold tracking-wide" style={{ color: 'var(--accent)' }}>
+        Coide
+      </span>
 
       {menus.map((menu, idx) => (
         <div key={menu.label} className="relative">
           <button
-            className={`px-2.5 py-0.5 rounded text-[13px] transition-colors
-              ${openMenu === idx
-                ? 'bg-[#094771] text-white'
-                : 'text-[#cccccc] hover:bg-[#2a2d2e] hover:text-white'
-              }`}
+            className="px-2.5 py-0.5 rounded text-[13px] transition-colors"
+            style={{
+              background: openMenu === idx ? 'var(--bg-selected)' : 'transparent',
+              color: openMenu === idx ? 'var(--text-bright)' : 'var(--text-primary)',
+            }}
             onClick={() => handleMenuClick(idx)}
-            onMouseEnter={() => handleMenuHover(idx)}
+            onMouseEnter={(e) => {
+              handleMenuHover(idx)
+              if (openMenu !== idx) e.currentTarget.style.background = 'var(--bg-hover)'
+            }}
+            onMouseLeave={(e) => {
+              if (openMenu !== idx) e.currentTarget.style.background = 'transparent'
+            }}
           >
             {menu.label}
           </button>

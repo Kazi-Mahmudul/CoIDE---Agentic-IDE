@@ -1,11 +1,17 @@
 import React, { useEffect, useRef } from 'react'
 import ChatMessage from './ChatMessage.jsx'
 
-export default function ChatMessages({ messages, streamingMessage, activeFilePath, onFileOpen, onApplied, onRegenerate, onEdit }) {
+export default function ChatMessages({
+  messages,
+  streamingMessage,
+  activeFilePath,
+  onFileOpen,
+  onApplied,
+  onRegenerate,
+  onEdit,
+}) {
   const bottomRef = useRef(null)
-  const containerRef = useRef(null)
 
-  // Auto-scroll to bottom when new content arrives
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages.length, streamingMessage?.content?.length])
@@ -13,15 +19,25 @@ export default function ChatMessages({ messages, streamingMessage, activeFilePat
   const isEmpty = messages.length === 0 && !streamingMessage
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-y-auto px-3 py-3 min-h-0">
+    <div className="flex-1 overflow-y-auto px-3 py-3 min-h-0">
       {isEmpty ? (
         <div className="flex flex-col items-center justify-center h-full text-center select-none">
-          <div className="text-4xl mb-3 opacity-30">⚡</div>
-          <div className="text-sm text-[#555] font-medium">Agentic IDE Assistant</div>
-          <div className="text-xs text-[#444] mt-2 space-y-1 max-w-[220px]">
+          <div className="text-4xl mb-3 opacity-20">⚡</div>
+          <div className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>
+            Agentic IDE Assistant
+          </div>
+          <div className="text-xs mt-2 space-y-1 max-w-[220px]" style={{ color: 'var(--text-muted)' }}>
             <div>Ask anything or give a task</div>
-            <div className="text-[#333]">Type <kbd className="bg-[#2d2d2d] px-1 rounded text-[#555]">@</kbd> to add context</div>
-            <div className="text-[#333]">Type <kbd className="bg-[#2d2d2d] px-1 rounded text-[#555]">#</kbd> to reference files</div>
+            <div>
+              Type{' '}
+              <kbd className="px-1 rounded text-[10px]" style={{ background: 'var(--bg-input)', color: 'var(--text-secondary)' }}>@</kbd>
+              {' '}to add context
+            </div>
+            <div>
+              Type{' '}
+              <kbd className="px-1 rounded text-[10px]" style={{ background: 'var(--bg-input)', color: 'var(--text-secondary)' }}>#</kbd>
+              {' '}to reference files
+            </div>
           </div>
           <div className="mt-4 space-y-1.5 w-full max-w-[240px]">
             {[
@@ -32,7 +48,14 @@ export default function ChatMessages({ messages, streamingMessage, activeFilePat
               <button
                 key={s}
                 onClick={() => onEdit?.({ _suggestion: s })}
-                className="w-full text-left px-3 py-1.5 text-xs bg-[#1a1a1a] hover:bg-[#252526] border border-[#333] hover:border-[#444] text-[#555] hover:text-[#858585] rounded-lg transition-colors"
+                className="w-full text-left px-3 py-1.5 text-xs rounded-lg transition-colors"
+                style={{
+                  background: 'var(--bg-hover)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-secondary)',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--border-light)'; e.currentTarget.style.color = 'var(--text-primary)' }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-secondary)' }}
               >
                 {s}
               </button>
@@ -43,19 +66,27 @@ export default function ChatMessages({ messages, streamingMessage, activeFilePat
         <>
           {messages.map((msg, i) => (
             <ChatMessage
-              key={msg.id || i}
+              // Use msg.id as key — guaranteed unique because addMessage now preserves ids
+              // and deduplicates. Fall back to index only as last resort.
+              key={msg.id || `msg-${i}`}
               message={msg}
               activeFilePath={activeFilePath}
               onFileOpen={onFileOpen}
               onApplied={onApplied}
-              onRegenerate={i === messages.length - 1 && msg.role === 'assistant' ? onRegenerate : undefined}
+              onRegenerate={
+                i === messages.length - 1 && msg.role === 'assistant'
+                  ? onRegenerate
+                  : undefined
+              }
               onEdit={onEdit}
             />
           ))}
 
-          {/* Streaming message */}
+          {/* Streaming message — uses streamingId which starts with "streaming_"
+              so it can NEVER collide with a persisted message id */}
           {streamingMessage && (
             <ChatMessage
+              key={streamingMessage.id}
               message={streamingMessage}
               streaming={true}
               activeFilePath={activeFilePath}

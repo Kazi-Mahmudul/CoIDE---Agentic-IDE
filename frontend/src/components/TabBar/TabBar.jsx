@@ -5,7 +5,6 @@ import Tab from './Tab.jsx'
 export default function TabBar() {
   const { openFiles, activeFileId } = useIDEStore()
   const [dragSrc, setDragSrc] = useState(null)
-  const [dragOver, setDragOver] = useState(null)
   const scrollRef = useRef(null)
 
   const onDragStart = (e, id) => {
@@ -13,14 +12,11 @@ export default function TabBar() {
     e.dataTransfer.effectAllowed = 'move'
   }
 
-  const onDragOver = (e, id) => {
-    e.preventDefault()
-    setDragOver(id)
-  }
+  const onDragOver = (e, id) => { e.preventDefault() }
 
   const onDrop = (e, targetId) => {
     e.preventDefault()
-    if (!dragSrc || dragSrc === targetId) { setDragOver(null); return }
+    if (!dragSrc || dragSrc === targetId) { setDragSrc(null); return }
     const store = useIDEStore.getState()
     const files = [...store.openFiles]
     const fromIdx = files.findIndex(f => f.id === dragSrc)
@@ -29,18 +25,12 @@ export default function TabBar() {
     files.splice(toIdx, 0, moved)
     useIDEStore.setState({ openFiles: files })
     setDragSrc(null)
-    setDragOver(null)
-  }
-
-  if (openFiles.length === 0) {
-    return <div className="h-9 bg-[#252526] border-b border-[#333] flex-shrink-0" />
   }
 
   return (
     <div
       ref={scrollRef}
-      className="flex h-9 bg-[#252526] border-b border-[#333] flex-shrink-0 overflow-x-auto overflow-y-hidden"
-      style={{ scrollbarWidth: 'none' }}
+      className="ide-tabbar flex h-9 flex-shrink-0 overflow-x-auto overflow-y-hidden scrollbar-none"
     >
       {openFiles.map(file => (
         <Tab
@@ -52,6 +42,8 @@ export default function TabBar() {
           onDrop={onDrop}
         />
       ))}
+      {/* Fill remaining space */}
+      <div className="flex-1" style={{ background: 'var(--bg-tab-inactive)' }} />
     </div>
   )
 }

@@ -2,62 +2,164 @@
 @tailwind components;
 @tailwind utilities;
 
-* {
-  box-sizing: border-box;
+/* ── Default theme variables (dark) ─────────────────────────────────────── */
+:root {
+  --bg-app:          #1e1e1e;
+  --bg-titlebar:     #1f1f1f;
+  --bg-activitybar:  #181818;
+  --bg-sidepanel:    #1e1e1e;
+  --bg-editor:       #1e1e1e;
+  --bg-bottompanel:  #1e1e1e;
+  --bg-tab-active:   #1e1e1e;
+  --bg-tab-inactive: #2d2d2d;
+  --bg-panel:        #252526;
+  --bg-input:        #3c3c3c;
+  --bg-hover:        #2a2d2e;
+  --bg-selected:     #094771;
+  --border:          #333333;
+  --border-light:    #444444;
+  --text-primary:    #cccccc;
+  --text-secondary:  #858585;
+  --text-muted:      #555555;
+  --text-bright:     #d4d4d4;
+  --accent:          #007acc;
+  --accent-hover:    #0098ff;
+  --statusbar-bg:    #007acc;
+  --statusbar-text:  #ffffff;
+  --scrollbar:       #424242;
 }
+
+* { box-sizing: border-box; }
 
 html, body, #root {
   height: 100%;
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background: #1e1e1e;
-  color: #d4d4d4;
+  background: var(--bg-app);
+  color: var(--text-primary);
   font-family: 'Segoe UI', system-ui, sans-serif;
 }
 
-/* xterm overrides */
-.xterm {
-  height: 100%;
-}
-.xterm-viewport {
-  overflow-y: auto !important;
-}
+/* ── Scrollbars ──────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-app); }
+::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-light); }
 
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: #1e1e1e;
-}
-::-webkit-scrollbar-thumb {
-  background: #424242;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #555;
-}
+/* ── xterm ───────────────────────────────────────────────────────────────── */
+.xterm { height: 100%; }
+.xterm-viewport { overflow-y: auto !important; }
 
-/* Markdown prose in chat */
+/* ── Markdown prose in chat ──────────────────────────────────────────────── */
 .prose-chat p { margin: 0.25rem 0; }
-.prose-chat pre { background: #2d2d2d; padding: 0.5rem; border-radius: 4px; overflow-x: auto; font-size: 0.8rem; }
-.prose-chat code { background: #2d2d2d; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.85em; }
+.prose-chat pre { background: var(--bg-input); padding: 0.5rem; border-radius: 4px; overflow-x: auto; font-size: 0.8rem; }
+.prose-chat code { background: var(--bg-input); padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.85em; }
 .prose-chat pre code { background: transparent; padding: 0; }
 .prose-chat ul { padding-left: 1.2rem; margin: 0.25rem 0; }
 .prose-chat ol { padding-left: 1.2rem; margin: 0.25rem 0; }
 .prose-chat li { margin: 0.1rem 0; }
-.prose-chat h1, .prose-chat h2, .prose-chat h3 { margin: 0.5rem 0 0.25rem; font-weight: 600; }
-.prose-chat a { color: #60a5fa; text-decoration: underline; }
-.prose-chat blockquote { border-left: 3px solid #555; padding-left: 0.75rem; color: #9ca3af; margin: 0.25rem 0; }
+.prose-chat h1, .prose-chat h2, .prose-chat h3 { margin: 0.5rem 0 0.25rem; font-weight: 600; color: var(--text-bright); }
+.prose-chat a { color: var(--accent); text-decoration: underline; }
+.prose-chat blockquote { border-left: 3px solid var(--border-light); padding-left: 0.75rem; color: var(--text-secondary); margin: 0.25rem 0; }
+.prose-chat table { border-collapse: collapse; width: 100%; font-size: 0.85em; }
+.prose-chat th { border: 1px solid var(--border-light); padding: 4px 8px; background: var(--bg-panel); }
+.prose-chat td { border: 1px solid var(--border); padding: 4px 8px; }
 
-/* Command palette animation */
+/* ── Animations ──────────────────────────────────────────────────────────── */
 @keyframes palette-in {
   from { opacity: 0; transform: scale(0.97) translateY(-4px); }
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-/* Hide scrollbar on tab bar */
+/* ── Utilities ───────────────────────────────────────────────────────────── */
 .scrollbar-none { scrollbar-width: none; }
 .scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* ── Theme-aware component overrides ─────────────────────────────────────── */
+
+/* Menu bar */
+.ide-menubar {
+  background: var(--bg-titlebar);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Activity bar */
+.ide-activitybar {
+  background: var(--bg-activitybar);
+  border-right: 1px solid var(--border);
+}
+
+/* Side panel */
+.ide-sidepanel {
+  background: var(--bg-sidepanel);
+  border-right: 1px solid var(--border);
+}
+
+/* Tab bar */
+.ide-tabbar {
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+.ide-tab-active {
+  background: var(--bg-tab-active);
+  border-top: 2px solid var(--accent);
+  color: var(--text-bright);
+}
+.ide-tab-inactive {
+  background: var(--bg-tab-inactive);
+  color: var(--text-secondary);
+}
+
+/* Bottom panel */
+.ide-bottompanel {
+  background: var(--bg-bottompanel);
+  border-top: 1px solid var(--border);
+}
+
+/* Status bar */
+.ide-statusbar {
+  background: var(--statusbar-bg);
+  color: var(--statusbar-text);
+}
+
+/* Chat panel */
+.ide-chatpanel {
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+}
+
+/* Generic panel */
+.ide-panel {
+  background: var(--bg-panel);
+}
+
+/* Input */
+.ide-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border-light);
+  color: var(--text-bright);
+}
+.ide-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* Hover */
+.ide-hover:hover {
+  background: var(--bg-hover);
+}
+
+/* Selected */
+.ide-selected {
+  background: var(--bg-selected);
+}
+
+/* Accent button */
+.ide-btn-accent {
+  background: var(--accent);
+  color: #fff;
+}
+.ide-btn-accent:hover {
+  background: var(--accent-hover);
+}

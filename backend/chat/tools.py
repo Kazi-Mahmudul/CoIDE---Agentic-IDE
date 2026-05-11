@@ -14,9 +14,10 @@ import time
 from pathlib import Path
 from typing import Optional
 
-WORKSPACE_DIR = os.path.normpath(
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "workspace")
-)
+import sys
+# Add parent directory to path so we can import config
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import WORKSPACE_DIR
 
 SKIP_DIRS = {"node_modules", "__pycache__", ".git", "venv", ".venv", "dist", ".next", "build", ".cache"}
 

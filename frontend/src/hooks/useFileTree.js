@@ -1,10 +1,14 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { getFileTree, getExternalTree } from '../api.js'
+
+const POLL_INTERVAL = 3000 // Poll every 3 seconds to catch agent-created files
 
 export function useFileTree(externalRoot = null) {
   const [tree, setTree] = useState([])
   const [loading, setLoading] = useState(false)
   const [rootPath, setRootPath] = useState(null)
+  const pollTimer = useRef(null)
+  const lastTreeHash = useRef('')
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -15,8 +19,13 @@ export function useFileTree(externalRoot = null) {
       } else {
         data = await getFileTree()
       }
-      setTree(data.tree || [])
-      setRootPath(data.root || null)
+      // Only update state if the tree actually changed (to avoid re-renders)
+      const hash = JSON.stringify(data.tree)
+      if (hash !== lastTreeHash.current) {
+        lastTreeHash.current = hash
+        setTree(data.tree || [])
+        setRootPath(data.root || null)
+      }
     } catch (e) {
       console.error('Failed to load file tree:', e)
     } finally {
@@ -24,8 +33,15 @@ export function useFileTree(externalRoot = null) {
     }
   }, [externalRoot])
 
+  // Initial load
   useEffect(() => {
     refresh()
+  }, [refresh])
+
+  // Auto-poll to catch files created by the agent
+  useEffect(() => {
+    pollTimer.current = setInterval(refresh, POLL_INTERVAL)
+    return () => clearInterval(pollTimer.current)
   }, [refresh])
 
   return { tree, loading, refresh, rootPath }

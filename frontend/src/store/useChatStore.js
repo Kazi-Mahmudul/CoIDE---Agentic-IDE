@@ -13,7 +13,6 @@ function loadThreads() {
 
 function saveThreads(threads) {
   try {
-    // Keep only last MAX_THREADS
     const keys = Object.keys(threads)
     if (keys.length > MAX_THREADS) {
       const sorted = keys.sort((a, b) => (threads[a].updatedAt || 0) - (threads[b].updatedAt || 0))
@@ -41,8 +40,6 @@ export const useChatStore = create((set, get) => {
   const firstId = threadIds.length > 0 ? threadIds[0] : uuidv4()
   const threads = threadIds.length > 0 ? savedThreads : { [firstId]: createThread(firstId) }
   const activeThreadId = firstId
-
-  const persist = () => saveThreads(get().threads)
 
   return {
     threads,
@@ -95,15 +92,31 @@ export const useChatStore = create((set, get) => {
     addMessage: (threadId, message) => set(s => {
       const thread = s.threads[threadId]
       if (!thread) return {}
-      const msg = { id: uuidv4(), timestamp: Date.now(), ...message }
+
+      // FIX: preserve the message's existing id — don't overwrite it with a new uuid.
+      // The spread order was wrong before: { id: uuidv4(), ...message } lets message.id win,
+      // but only if message already has an id. We want: use message.id if present, else generate.
+      const msg = {
+        timestamp: Date.now(),
+        ...message,
+        id: message.id || uuidv4(),   // keep existing id, only generate if missing
+      }
+
+      // Deduplicate: if a message with this id already exists, replace it (handles
+      // the case where streaming message is finalized and added again)
+      const existing = thread.messages.findIndex(m => m.id === msg.id)
+      const messages = existing >= 0
+        ? thread.messages.map((m, i) => i === existing ? msg : m)
+        : [...thread.messages, msg]
+
       const threads = {
         ...s.threads,
         [threadId]: {
           ...thread,
-          messages: [...thread.messages, msg],
+          messages,
           updatedAt: Date.now(),
           // Auto-title from first user message
-          title: thread.messages.length === 0 && message.role === 'user'
+          title: thread.messages.length === 0 && message.role === 'user' && message.content
             ? message.content.slice(0, 50) + (message.content.length > 50 ? '…' : '')
             : thread.title,
         }

@@ -39,9 +39,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["terminal"])
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-WORKSPACE_DIR = os.path.normpath(
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "workspace")
-)
+from config import WORKSPACE_DIR
 SESSION_TIMEOUT = 30          # seconds before orphaned session is killed
 HEARTBEAT_INTERVAL = 15       # seconds between server pings
 CLIENT_TIMEOUT = 60           # seconds of silence before disconnect

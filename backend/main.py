@@ -8,16 +8,13 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from config import WORKSPACE_DIR
 from files import router as files_router
 from agent import router as agent_router
 from terminal import router as terminal_router
 from chat.router import router as chat_router
 
 logging.basicConfig(level=logging.INFO)
-
-WORKSPACE_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "workspace"
-)
 
 app = FastAPI(title="Coide - Agentic Web IDE", version="1.0.0")
 

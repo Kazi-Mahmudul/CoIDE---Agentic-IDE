@@ -2,7 +2,7 @@ import { useIDEStore } from '../../store/useIDEStore.js'
 import { useCommandStore } from '../../store/useCommandStore.js'
 import { toast } from 'react-hot-toast'
 
-export function registerCommands({ editorRef, openCommandPalette }) {
+export function registerCommands({ editorRef, openCommandPalette, onOpenThemePicker }) {
   const store = useIDEStore.getState
 
   const commands = [
@@ -11,7 +11,7 @@ export function registerCommands({ editorRef, openCommandPalette }) {
     { id: 'view.toggleSidebar',     label: 'View: Toggle Side Bar',              shortcut: 'Ctrl+B',         action: () => store().toggleSidePanel() },
     { id: 'view.focusTerminal',     label: 'Terminal: Focus Terminal',            shortcut: 'Ctrl+`',         action: () => { store().openBottomPanel(); store().setBottomTab('terminal') } },
     { id: 'terminal.new',           label: 'Terminal: New Terminal',              shortcut: 'Ctrl+Shift+`',   action: () => { store().openBottomPanel(); store().setBottomTab('terminal') } },
-    { id: 'terminal.split',         label: 'Terminal: Split Terminal',            shortcut: 'Ctrl+Shift+5',   action: () => toast('Split terminal — not yet implemented', { icon: '🚧' }) },
+    { id: 'terminal.split',         label: 'Terminal: Split Terminal',            shortcut: 'Ctrl+Shift+5',   action: () => { store().openBottomPanel(); store().setBottomTab('terminal'); window.dispatchEvent(new CustomEvent('coide:split-terminal')) } },
     { id: 'view.explorer',          label: 'View: Show Explorer',                 shortcut: 'Ctrl+Shift+E',   action: () => { store().setActivityTab('explorer'); store().openSidePanel() } },
     { id: 'view.search',            label: 'View: Show Search',                   shortcut: 'Ctrl+Shift+F',   action: () => { store().setActivityTab('search'); store().openSidePanel() } },
     { id: 'view.extensions',        label: 'View: Show Extensions',               shortcut: 'Ctrl+Shift+X',   action: () => { store().setActivityTab('extensions'); store().openSidePanel() } },
@@ -21,7 +21,7 @@ export function registerCommands({ editorRef, openCommandPalette }) {
 
     // ── File operations ────────────────────────────────────────────────────
     { id: 'file.save',              label: 'File: Save',                          shortcut: 'Ctrl+S',         action: () => editorRef?.current?.save?.() },
-    { id: 'file.saveAll',           label: 'File: Save All',                      shortcut: 'Ctrl+K S',       action: () => toast('Save All — not yet implemented', { icon: '🚧' }) },
+    { id: 'file.saveAll',           label: 'File: Save All',                      shortcut: 'Ctrl+K S',       action: () => openCommandPalette('save-all') },
     { id: 'file.new',               label: 'File: New File',                      shortcut: 'Ctrl+N',         action: () => openCommandPalette('new-file') },
     { id: 'file.openFolder',        label: 'File: Open Folder...',                shortcut: 'Ctrl+K Ctrl+O',  action: () => openCommandPalette('open-folder') },
     { id: 'file.close',             label: 'File: Close Editor',                  shortcut: 'Ctrl+W',         action: () => store().closeActiveTab() },
@@ -45,9 +45,16 @@ export function registerCommands({ editorRef, openCommandPalette }) {
     { id: 'view.fullscreen',        label: 'View: Toggle Full Screen',            shortcut: 'F11',            action: () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen() },
 
     // ── Preferences ────────────────────────────────────────────────────────
+    { id: 'theme.picker',           label: 'Preferences: Color Theme…',           shortcut: 'Ctrl+K Ctrl+T', action: () => onOpenThemePicker?.() },
     { id: 'theme.dark',             label: 'Preferences: Color Theme → Dark',     shortcut: '',               action: () => store().setTheme('dark') },
     { id: 'theme.light',            label: 'Preferences: Color Theme → Light',    shortcut: '',               action: () => store().setTheme('light') },
-    { id: 'keyboard.shortcuts',     label: 'Preferences: Open Keyboard Shortcuts', shortcut: 'Ctrl+K Ctrl+S', action: () => toast('Keyboard shortcuts — not yet implemented', { icon: '🚧' }) },
+    { id: 'theme.dracula',          label: 'Preferences: Color Theme → Dracula',  shortcut: '',               action: () => store().setTheme('dracula') },
+    { id: 'theme.nord',             label: 'Preferences: Color Theme → Nord',     shortcut: '',               action: () => store().setTheme('nord') },
+    { id: 'theme.monokai',          label: 'Preferences: Color Theme → Monokai', shortcut: '',               action: () => store().setTheme('monokai') },
+    { id: 'theme.solarized',        label: 'Preferences: Color Theme → Solarized Dark', shortcut: '',        action: () => store().setTheme('solarized-dark') },
+    { id: 'theme.github',           label: 'Preferences: Color Theme → GitHub Dark', shortcut: '',           action: () => store().setTheme('github-dark') },
+    { id: 'theme.tokyo',            label: 'Preferences: Color Theme → Tokyo Night', shortcut: '',           action: () => store().setTheme('tokyo-night') },
+    { id: 'keyboard.shortcuts',     label: 'Preferences: Open Keyboard Shortcuts', shortcut: 'Ctrl+K Ctrl+S', action: () => window.dispatchEvent(new CustomEvent('coide:show-shortcuts')) },
     { id: 'workbench.commandPalette', label: 'View: Command Palette',             shortcut: 'Ctrl+Shift+P',   action: () => openCommandPalette('>') },
   ]
 

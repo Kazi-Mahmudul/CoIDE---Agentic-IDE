@@ -1,4 +1,4 @@
-﻿
+
 /**
  * App.jsx — VS Code / Cursor-style IDE shell
  */
@@ -10,7 +10,8 @@ import { registerCommands } from './components/CommandPalette/commands.js'
 import { buildMenus } from './components/MenuBar/menus.js'
 import { useKeyboard } from './hooks/useKeyboard.js'
 import { useFileTree } from './hooks/useFileTree.js'
-import { readFile, readExternalFile, writeFile } from './api.js'
+import { readFile, readExternalFile, writeFile, writeExternalFile, createFile, createExternalFile } from './api.js'
+import { applyTheme, THEMES } from './themes.js'
 
 import MenuBar from './components/MenuBar/MenuBar.jsx'
 import TabBar from './components/TabBar/TabBar.jsx'
@@ -23,6 +24,7 @@ import CommandPalette from './components/CommandPalette/CommandPalette.jsx'
 import ChatPanel from './components/ChatPanel/ChatPanel.jsx'
 import ConfigModal from './components/ConfigModal.jsx'
 import FolderPicker from './components/FolderPicker.jsx'
+import ThemePicker from './components/ThemePicker.jsx'
 
 // Counter for untitled files
 let untitledCounter = 1
@@ -39,6 +41,8 @@ export default function App() {
   const editorRef = useRef(null)
   const [configOpen, setConfigOpen] = useState(false)
   const [folderPickerOpen, setFolderPickerOpen] = useState(false)
+  const [themePickerOpen, setThemePickerOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [cursorPosition, setCursorPosition] = useState(null)
   const [markers, setMarkers] = useState([])
 
@@ -55,8 +59,15 @@ export default function App() {
 
   // ── Register commands once ──────────────────────────────────────────────
   useEffect(() => {
-    registerCommands({ editorRef, openCommandPalette })
+    registerCommands({ editorRef, openCommandPalette, onOpenThemePicker: () => setThemePickerOpen(true) })
   }, [openCommandPalette])
+
+  // ── Listen for keyboard shortcuts modal event ───────────────────────────
+  useEffect(() => {
+    const handler = () => setShortcutsOpen(true)
+    window.addEventListener('coide:show-shortcuts', handler)
+    return () => window.removeEventListener('coide:show-shortcuts', handler)
+  }, [])
 
   // ── Show config modal on first load ─────────────────────────────────────
   useEffect(() => {
@@ -65,14 +76,7 @@ export default function App() {
 
   // ── Apply theme to document ─────────────────────────────────────────────
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme)
-    if (theme === 'light') {
-      document.body.style.background = '#f3f3f3'
-      document.body.style.color = '#333333'
-    } else {
-      document.body.style.background = '#1e1e1e'
-      document.body.style.color = '#cccccc'
-    }
+    applyTheme(theme)
   }, [theme])
 
   // ── Open file handler ───────────────────────────────────────────────────
@@ -124,21 +128,100 @@ export default function App() {
     }
   }, [openFiles, openFile, setActiveFile, externalRoot])
 
-  // ── New untitled file ───────────────────────────────────────────────────
-  const handleNewFile = useCallback(() => {
-    const name = `Untitled-${untitledCounter++}`
-    openFile({
-      id: `__untitled__${name}`,
-      path: name,
-      label: name,
-      content: '',
-      language: 'plaintext',
-      modified: true,
-      isUntitled: true,
-    })
-  }, [openFile])
+  // ── New file — prompts for name and creates in workspace ───────────────
+  const handleNewFile = useCallback(async (suggestedName) => {
+    const name = suggestedName || prompt('New file name (e.g. main.py):')
+    if (!name?.trim()) return
+    const filename = name.trim()
+    try {
+      if (externalRoot) {
+        // External folder mode: create via external file API
+        await fetch('http://localhost:8000/files/external/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ root: externalRoot, path: filename, is_dir: false }),
+        })
+      } else {
+        // Workspace mode
+        await fetch('http://localhost:8000/files/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: filename, is_dir: false }),
+        })
+      }
+      openFile({
+        id: externalRoot ? `${externalRoot}/${filename}` : filename,
+        path: filename,
+        label: filename.split('/').pop() || filename,
+        content: '',
+        language: filename.split('.').pop()?.toLowerCase() || 'plaintext',
+        externalRoot: externalRoot || null,
+        modified: false,
+      })
+      refresh()
+      toast.success(`Created ${filename}`)
+    } catch (e) {
+      toast.error(`Create failed: ${e.message}`)
+    }
+  }, [openFile, refresh, externalRoot])
 
-  // ── Agent file write handler ────────────────────────────────────────────
+  // ── Save All open files ─────────────────────────────────────────────────
+  const handleSaveAll = useCallback(async () => {
+    const modified = openFiles.filter(f => f.modified && !f.isUntitled)
+    if (modified.length === 0) { toast('All files saved'); return }
+    let saved = 0
+    for (const file of modified) {
+      try {
+        if (file.externalRoot) {
+          await writeExternalFile(file.externalRoot, file.path, file.content || '')
+        } else {
+          await writeFile(file.path, file.content || '')
+        }
+        useIDEStore.getState().markFileModified(file.id, false)
+        saved++
+      } catch (e) {
+        toast.error(`Failed to save ${file.label}: ${e.message}`)
+      }
+    }
+    if (saved > 0) toast.success(`Saved ${saved} file${saved !== 1 ? 's' : ''}`)
+  }, [openFiles])
+
+  // ── Open file from disk (file input) ────────────────────────────────────
+  const handleOpenFile = useCallback(() => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.multiple = true
+    input.accept = '.py,.js,.ts,.jsx,.tsx,.html,.css,.json,.md,.txt,.yaml,.yml,.toml,.env,.sh,.rs,.go,.java,.cpp,.c,.h,.rb,.php,.sql,.xml,.csv,.ini,.cfg,.conf,.gitignore,.dockerfile'
+    input.onchange = async (e) => {
+      const files = Array.from(e.target.files || [])
+      for (const file of files) {
+        try {
+          const content = await file.text()
+          const filename = file.name
+          // Write to workspace (or external root if set)
+          if (externalRoot) {
+            await writeExternalFile(externalRoot, filename, content)
+          } else {
+            await writeFile(filename, content)
+          }
+          openFile({
+            id: externalRoot ? `${externalRoot}/${filename}` : filename,
+            path: filename,
+            label: filename,
+            content,
+            language: filename.split('.').pop()?.toLowerCase() || 'plaintext',
+            externalRoot: externalRoot || null,
+            modified: false,
+          })
+          refresh()
+          toast.success(`Opened ${filename}`)
+        } catch (err) {
+          toast.error(`Failed to open ${file.name}: ${err.message}`)
+        }
+      }
+    }
+    input.click()
+  }, [openFile, refresh, externalRoot])
   const handleAgentFileWrite = useCallback(async (path) => {
     if (activeFile?.path === path) {
       try {
@@ -163,8 +246,10 @@ export default function App() {
   const handleOpenCommandPalette = useCallback((prefix = '>') => {
     if (prefix === 'open-folder') { setFolderPickerOpen(true); return }
     if (prefix === 'new-file') { handleNewFile(); return }
+    if (prefix === 'open-file') { handleOpenFile(); return }
+    if (prefix === 'save-all') { handleSaveAll(); return }
     openCommandPalette(prefix)
-  }, [openCommandPalette, handleNewFile])
+  }, [openCommandPalette, handleNewFile, handleOpenFile, handleSaveAll])
 
   // ── Keyboard shortcuts ──────────────────────────────────────────────────
   useKeyboard(editorRef, handleOpenCommandPalette)
@@ -175,6 +260,9 @@ export default function App() {
     editorRef,
     openCommandPalette: handleOpenCommandPalette,
     toast,
+    onOpenThemePicker: () => setThemePickerOpen(true),
+    onSaveAll: handleSaveAll,
+    onOpenFile: handleOpenFile,
   })
 
   // ── Go to line from problems panel ─────────────────────────────────────
@@ -198,23 +286,20 @@ export default function App() {
   return (
     <div
       className="flex flex-col h-screen w-screen overflow-hidden"
-      style={{
-        background: theme === 'light' ? '#f3f3f3' : '#1e1e1e',
-        color: theme === 'light' ? '#333333' : '#cccccc',
-        fontSize: 13,
-      }}
+      style={{ background: 'var(--bg-app)', color: 'var(--text-primary)', fontSize: 13 }}
     >
       <Toaster
         position="bottom-right"
         toastOptions={{
           duration: 3000,
-          style: { background: '#2d2d2d', color: '#d4d4d4', border: '1px solid #424242', fontSize: '13px' },
+          style: { background: 'var(--bg-panel)', color: 'var(--text-bright)', border: '1px solid var(--border-light)', fontSize: '13px' },
           error: { style: { background: '#3b1a1a', color: '#f87171', border: '1px solid #7f1d1d' } },
         }}
       />
 
       {/* Modals */}
       <ConfigModal open={configOpen} onClose={() => setConfigOpen(false)} />
+      <ThemePicker open={themePickerOpen} onClose={() => setThemePickerOpen(false)} />
       <FolderPicker
         open={folderPickerOpen}
         onClose={() => setFolderPickerOpen(false)}
@@ -225,6 +310,51 @@ export default function App() {
         workspaceFiles={allWorkspaceFiles()}
         onOpenFile={handleFileOpen}
       />
+
+      {/* Keyboard Shortcuts Modal */}
+      {shortcutsOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.6)' }}
+          onClick={() => setShortcutsOpen(false)}
+        >
+          <div
+            className="w-[640px] max-h-[80vh] flex flex-col rounded-lg overflow-hidden shadow-2xl"
+            style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-light)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
+              <span className="text-sm font-semibold" style={{ color: 'var(--text-bright)' }}>Keyboard Shortcuts</span>
+              <button onClick={() => setShortcutsOpen(false)} className="text-lg leading-none" style={{ color: 'var(--text-muted)' }}>✕</button>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              {[['Navigation','Ctrl+P — Go to File','Ctrl+Shift+P — Command Palette','Ctrl+G — Go to Line','Ctrl+Shift+E — Explorer','Ctrl+Shift+F — Search','Ctrl+Shift+X — Extensions','Ctrl+B — Toggle Sidebar','Ctrl+J — Toggle Terminal'],
+                ['Editing','Ctrl+S — Save','Ctrl+K S — Save All','Ctrl+Z — Undo','Ctrl+Y — Redo','Ctrl+/ — Toggle Comment','Shift+Alt+F — Format Document','Ctrl+F — Find','Ctrl+H — Find & Replace'],
+                ['Terminal','Ctrl+` — Focus Terminal','Ctrl+Shift+` — New Terminal','Ctrl+Shift+5 — Split Terminal','Ctrl+Shift+T — New Tab','Ctrl+Shift+W — Close Tab'],
+                ['View','Ctrl+= — Zoom In','Ctrl+- — Zoom Out','Ctrl+0 — Reset Zoom','F11 — Full Screen','Ctrl+K Ctrl+T — Color Theme'],
+              ].map(([section, ...shortcuts]) => (
+                <div key={section} className="px-5 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
+                  <div className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-secondary)' }}>{section}</div>
+                  <div className="grid grid-cols-2 gap-1">
+                    {shortcuts.map(s => {
+                      const [key, ...desc] = s.split(' — ')
+                      return (
+                        <div key={s} className="flex items-center justify-between gap-2 py-0.5">
+                          <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>{desc.join(' — ')}</span>
+                          <kbd className="text-[10px] px-1.5 py-0.5 rounded font-mono flex-shrink-0"
+                            style={{ background: 'var(--bg-input)', color: 'var(--text-bright)', border: '1px solid var(--border-light)' }}>
+                            {key}
+                          </kbd>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Menu bar */}
       <MenuBar menus={menus} />
@@ -267,11 +397,11 @@ export default function App() {
           {/* Reopen bar when bottom panel is closed */}
           {!bottomPanelOpen && (
             <div
-              className="flex-shrink-0 h-6 flex items-center px-3 border-t border-[#333] cursor-pointer hover:bg-[#2a2d2e]"
-              style={{ background: theme === 'light' ? '#f3f3f3' : '#1e1e1e' }}
+              className="flex-shrink-0 h-6 flex items-center px-3 border-t cursor-pointer hover:bg-[var(--bg-hover)]"
+              style={{ background: 'var(--bg-app)', borderColor: 'var(--border)' }}
               onClick={openBottomPanel}
             >
-              <span className="text-[10px] text-[#555] hover:text-[#858585] transition-colors">
+              <span className="text-[10px] transition-colors" style={{ color: 'var(--text-muted)' }}>
                 ▲ Terminal
               </span>
             </div>
@@ -280,8 +410,7 @@ export default function App() {
 
         {/* Right: Agent chat */}
         <div
-          className="w-80 flex-shrink-0 border-l border-[#333] flex flex-col"
-          style={{ background: theme === 'light' ? '#f8f8f8' : '#1e1e1e' }}
+          className="w-80 flex-shrink-0 flex flex-col ide-chatpanel"
         >
           <ChatPanel
             activeFile={activeFile}
@@ -298,6 +427,7 @@ export default function App() {
         cursorPosition={cursorPosition}
         language={language}
         markers={markers}
+        onOpenThemePicker={() => setThemePickerOpen(true)}
       />
     </div>
   )

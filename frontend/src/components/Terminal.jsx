@@ -1,4 +1,4 @@
-﻿
+
 /**
  * Terminal.jsx — Multi-tab terminal using imperative TerminalInstance.
  *
@@ -91,6 +91,13 @@ export default function Terminal({ cwd, onClose }) {
     createInstance(first.id, first.cwd)
     setActiveTabId(first.id)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Listen for external split-terminal command ────────────────────────────
+  useEffect(() => {
+    const handler = () => splitH()
+    window.addEventListener('coide:split-terminal', handler)
+    return () => window.removeEventListener('coide:split-terminal', handler)
+  }, [splitH])
 
   // ── Cleanup all instances on unmount ─────────────────────────────────────
   useEffect(() => {

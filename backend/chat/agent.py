@@ -18,9 +18,9 @@ from .context import build_system_prompt
 from .memory import save_checkpoint, read_file_for_checkpoint
 from .tools import TOOL_SCHEMAS, execute_tool
 
-WORKSPACE_DIR = os.path.normpath(
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "workspace")
-)
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import WORKSPACE_DIR
 
 
 def _emit(obj: dict) -> str:

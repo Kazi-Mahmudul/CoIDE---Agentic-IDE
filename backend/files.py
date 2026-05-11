@@ -17,9 +17,7 @@ from pydantic import BaseModel
 router = APIRouter(tags=["files"])
 
 # ── Default workspace (sandboxed) ────────────────────────────────────────────
-WORKSPACE_DIR = os.path.normpath(
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "workspace")
-)
+from config import WORKSPACE_DIR
 
 
 # ─────────────────────────── helpers ─────────────────────────────────────────

@@ -11,9 +11,9 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Optional
 
-WORKSPACE_DIR = os.path.normpath(
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "workspace")
-)
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import WORKSPACE_DIR
 
 # ── Checkpoint storage ────────────────────────────────────────────────────────
 # checkpoint_id → {files: {path: original_content}}

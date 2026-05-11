@@ -4,20 +4,18 @@ import { useIDEStore } from '../../store/useIDEStore.js'
 import FileTree from '../FileTree.jsx'
 import SearchPanel from './SearchPanel.jsx'
 import ExtensionsPanel from './ExtensionsPanel.jsx'
+import GitPanel from './GitPanel.jsx'
 
 const PANEL_TITLES = {
-  explorer: 'EXPLORER',
-  search: 'SEARCH',
-  git: 'SOURCE CONTROL',
+  explorer:   'EXPLORER',
+  search:     'SEARCH',
+  git:        'SOURCE CONTROL',
   extensions: 'EXTENSIONS',
-  chat: 'AGENT CHAT',
+  chat:       'AGENT CHAT',
 }
 
 export default function SidePanel({ tree, activeFilePath, externalRoot, onFileOpen, onRefresh, onOpenFolder }) {
-  const {
-    sidePanelOpen, sidePanelWidth, activeActivityTab,
-    closeSidePanel, setSidePanelWidth,
-  } = useIDEStore()
+  const { sidePanelOpen, sidePanelWidth, activeActivityTab, closeSidePanel, setSidePanelWidth } = useIDEStore()
 
   const dragging = useRef(false)
   const startX = useRef(0)
@@ -35,8 +33,7 @@ export default function SidePanel({ tree, activeFilePath, externalRoot, onFileOp
   useEffect(() => {
     const onMove = (e) => {
       if (!dragging.current) return
-      const delta = e.clientX - startX.current
-      setSidePanelWidth(startW.current + delta)
+      setSidePanelWidth(startW.current + (e.clientX - startX.current))
     }
     const onUp = () => {
       if (!dragging.current) return
@@ -46,10 +43,7 @@ export default function SidePanel({ tree, activeFilePath, externalRoot, onFileOp
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
-    return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
   }, [setSidePanelWidth])
 
   if (!sidePanelOpen) return null
@@ -71,18 +65,13 @@ export default function SidePanel({ tree, activeFilePath, externalRoot, onFileOp
       case 'search':
         return <SearchPanel onFileOpen={(path, line) => onFileOpen(path, line)} />
       case 'git':
-        return (
-          <div className="flex flex-col items-center justify-center h-full text-center px-4">
-            <div className="text-xs text-[#555]">Source control</div>
-            <div className="text-[10px] text-[#444] mt-1">Coming soon</div>
-          </div>
-        )
+        return <GitPanel onFileOpen={onFileOpen} />
       case 'extensions':
         return <ExtensionsPanel />
       case 'chat':
         return (
           <div className="flex flex-col items-center justify-center h-full text-center px-4">
-            <div className="text-xs text-[#555]">Agent chat is in the right panel</div>
+            <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Agent chat is in the right panel</div>
           </div>
         )
       default:
@@ -92,17 +81,23 @@ export default function SidePanel({ tree, activeFilePath, externalRoot, onFileOp
 
   return (
     <div
-      className="flex-shrink-0 flex flex-col bg-[#1e1e1e] border-r border-[#333] overflow-hidden relative"
+      className="ide-sidepanel flex-shrink-0 flex flex-col overflow-hidden relative"
       style={{ width: sidePanelWidth }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-3 h-9 border-b border-[#333] flex-shrink-0">
-        <span className="text-[11px] font-semibold tracking-wider text-[#858585]">
+      <div
+        className="flex items-center justify-between px-3 h-9 flex-shrink-0"
+        style={{ borderBottom: '1px solid var(--border)' }}
+      >
+        <span className="text-[11px] font-semibold tracking-wider" style={{ color: 'var(--text-secondary)' }}>
           {PANEL_TITLES[activeActivityTab] || 'PANEL'}
         </span>
         <button
           onClick={closeSidePanel}
-          className="p-0.5 rounded text-[#555] hover:text-[#d4d4d4] hover:bg-[#3a3a3a] transition-colors"
+          className="p-0.5 rounded transition-colors"
+          style={{ color: 'var(--text-muted)' }}
+          onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-bright)'; e.currentTarget.style.background = 'var(--bg-hover)' }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'transparent' }}
           title="Close (Ctrl+B)"
         >
           <X size={14} />
@@ -114,10 +109,13 @@ export default function SidePanel({ tree, activeFilePath, externalRoot, onFileOp
         {renderContent()}
       </div>
 
-      {/* Resize handle — right edge */}
+      {/* Resize handle */}
       <div
-        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-[#007acc] transition-colors z-10"
+        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize z-10 transition-colors"
+        style={{ background: 'transparent' }}
         onMouseDown={onDragStart}
+        onMouseEnter={e => e.currentTarget.style.background = 'var(--accent)'}
+        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
       />
     </div>
   )

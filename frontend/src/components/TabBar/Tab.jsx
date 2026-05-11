@@ -11,7 +11,7 @@ const EXT_COLORS = {
 
 function FileIcon({ path, size = 12 }) {
   const ext = path?.split('.').pop()?.toLowerCase()
-  const color = EXT_COLORS[ext] || '#858585'
+  const color = EXT_COLORS[ext] || 'var(--text-secondary)'
   return (
     <span
       className="inline-block rounded-sm flex-shrink-0"
@@ -27,24 +27,17 @@ export default function Tab({ file, isActive, onDragStart, onDragOver, onDrop })
 
   useEffect(() => {
     if (!contextMenu) return
-    const h = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setContextMenu(null)
-    }
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setContextMenu(null) }
     document.addEventListener('mousedown', h)
     return () => document.removeEventListener('mousedown', h)
   }, [contextMenu])
-
-  const handleContextMenu = (e) => {
-    e.preventDefault()
-    setContextMenu({ x: e.clientX, y: e.clientY })
-  }
 
   const handleMiddleClick = (e) => {
     if (e.button === 1) { e.preventDefault(); closeFile(file.id) }
   }
 
   return (
-    <div ref={ref} className="relative flex-shrink-0">
+    <div ref={ref} className="relative flex-shrink-0 h-full">
       <div
         draggable
         onDragStart={(e) => onDragStart(e, file.id)}
@@ -52,13 +45,18 @@ export default function Tab({ file, isActive, onDragStart, onDragOver, onDrop })
         onDrop={(e) => onDrop(e, file.id)}
         onClick={() => setActiveFile(file.id)}
         onMouseDown={handleMiddleClick}
-        onContextMenu={handleContextMenu}
-        className={`flex items-center gap-1.5 px-3 h-full text-[13px] cursor-pointer select-none border-r border-[#333] group
-          ${isActive
-            ? 'bg-[#1e1e1e] text-[#d4d4d4] border-t-2 border-t-[#007acc]'
-            : 'bg-[#2d2d2d] text-[#858585] hover:bg-[#2a2d2e] hover:text-[#cccccc]'
-          }`}
-        style={{ minWidth: 80, maxWidth: 200 }}
+        onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY }) }}
+        className="flex items-center gap-1.5 px-3 h-full text-[13px] cursor-pointer select-none group transition-colors"
+        style={{
+          background: isActive ? 'var(--bg-tab-active)' : 'var(--bg-tab-inactive)',
+          color: isActive ? 'var(--text-bright)' : 'var(--text-secondary)',
+          borderRight: '1px solid var(--border)',
+          borderTop: isActive ? `2px solid var(--accent)` : '2px solid transparent',
+          minWidth: 80,
+          maxWidth: 200,
+        }}
+        onMouseEnter={e => { if (!isActive) { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-primary)' } }}
+        onMouseLeave={e => { if (!isActive) { e.currentTarget.style.background = 'var(--bg-tab-inactive)'; e.currentTarget.style.color = 'var(--text-secondary)' } }}
       >
         <FileIcon path={file.path} />
         {file.modified && (
@@ -67,7 +65,10 @@ export default function Tab({ file, isActive, onDragStart, onDragOver, onDrop })
         <span className="truncate flex-1">{file.label}</span>
         <button
           onClick={(e) => { e.stopPropagation(); closeFile(file.id) }}
-          className="w-4 h-4 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-[#555] text-[#858585] hover:text-[#d4d4d4] flex-shrink-0 transition-opacity"
+          className="w-4 h-4 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 flex-shrink-0 transition-opacity"
+          style={{ color: 'var(--text-secondary)' }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-bright)' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)' }}
         >
           <X size={11} />
         </button>
@@ -75,8 +76,8 @@ export default function Tab({ file, isActive, onDragStart, onDragOver, onDrop })
 
       {contextMenu && (
         <div
-          className="fixed z-50 bg-[#252526] border border-[#454545] rounded shadow-xl py-1 text-[13px]"
-          style={{ left: contextMenu.x, top: contextMenu.y, minWidth: 180 }}
+          className="fixed z-50 rounded shadow-xl py-1 text-[13px]"
+          style={{ left: contextMenu.x, top: contextMenu.y, minWidth: 180, background: 'var(--bg-panel)', border: '1px solid var(--border-light)' }}
         >
           {[
             ['Close', () => closeFile(file.id)],
@@ -86,15 +87,21 @@ export default function Tab({ file, isActive, onDragStart, onDragOver, onDrop })
             <button
               key={label}
               onClick={() => { setContextMenu(null); action() }}
-              className="w-full text-left px-3 py-1 text-[#cccccc] hover:bg-[#094771]"
+              className="w-full text-left px-3 py-1 transition-colors"
+              style={{ color: 'var(--text-primary)' }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-selected)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
             >
               {label}
             </button>
           ))}
-          <div className="border-t border-[#444] my-1" />
+          <div className="my-1" style={{ borderTop: '1px solid var(--border)' }} />
           <button
             onClick={() => { setContextMenu(null); navigator.clipboard.writeText(file.path) }}
-            className="w-full text-left px-3 py-1 text-[#cccccc] hover:bg-[#094771]"
+            className="w-full text-left px-3 py-1 transition-colors"
+            style={{ color: 'var(--text-primary)' }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-selected)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
           >
             Copy Path
           </button>

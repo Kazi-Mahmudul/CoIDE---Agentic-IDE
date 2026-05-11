@@ -4,27 +4,24 @@ import { useIDEStore } from '../../store/useIDEStore.js'
 import TerminalPanel from './TerminalPanel.jsx'
 import ProblemsPanel from './ProblemsPanel.jsx'
 import OutputPanel from './OutputPanel.jsx'
+import DebugConsole from './DebugConsole.jsx'
 
 const TABS = [
   { id: 'terminal', label: 'TERMINAL' },
   { id: 'problems', label: 'PROBLEMS' },
-  { id: 'output', label: 'OUTPUT' },
-  { id: 'debug', label: 'DEBUG CONSOLE' },
+  { id: 'output',   label: 'OUTPUT' },
+  { id: 'debug',    label: 'DEBUG CONSOLE' },
 ]
 
 export default function BottomPanel({ markers = [], onGoToLine }) {
-  const {
-    bottomPanelOpen, bottomPanelHeight, activeBottomTab,
-    closeBottomPanel, setBottomTab, setBottomPanelHeight,
-  } = useIDEStore()
-
+  const { bottomPanelOpen, bottomPanelHeight, activeBottomTab, closeBottomPanel, setBottomTab, setBottomPanelHeight } = useIDEStore()
   const [maximized, setMaximized] = useState(false)
   const [prevHeight, setPrevHeight] = useState(bottomPanelHeight)
   const dragging = useRef(false)
   const startY = useRef(0)
   const startH = useRef(0)
 
-  const errors = markers.filter(m => m.severity === 8).length
+  const errors   = markers.filter(m => m.severity === 8).length
   const warnings = markers.filter(m => m.severity === 4).length
 
   const onDragStart = useCallback((e) => {
@@ -40,8 +37,7 @@ export default function BottomPanel({ markers = [], onGoToLine }) {
     const onMove = (e) => {
       if (!dragging.current) return
       const delta = startY.current - e.clientY
-      const maxH = window.innerHeight * 0.6
-      setBottomPanelHeight(Math.max(80, Math.min(maxH, startH.current + delta)))
+      setBottomPanelHeight(Math.max(80, Math.min(window.innerHeight * 0.6, startH.current + delta)))
     }
     const onUp = () => {
       if (!dragging.current) return
@@ -51,48 +47,47 @@ export default function BottomPanel({ markers = [], onGoToLine }) {
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
-    return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
   }, [setBottomPanelHeight])
 
   const toggleMaximize = () => {
-    if (maximized) {
-      setBottomPanelHeight(prevHeight)
-      setMaximized(false)
-    } else {
-      setPrevHeight(bottomPanelHeight)
-      setBottomPanelHeight(window.innerHeight * 0.6)
-      setMaximized(true)
-    }
+    if (maximized) { setBottomPanelHeight(prevHeight); setMaximized(false) }
+    else { setPrevHeight(bottomPanelHeight); setBottomPanelHeight(window.innerHeight * 0.6); setMaximized(true) }
   }
 
   if (!bottomPanelOpen) return null
 
   return (
     <div
-      className="flex-shrink-0 flex flex-col bg-[#1e1e1e] border-t border-[#333] overflow-hidden"
+      className="ide-bottompanel flex-shrink-0 flex flex-col overflow-hidden"
       style={{ height: bottomPanelHeight }}
     >
       {/* Drag handle */}
       <div
-        className="h-1 flex-shrink-0 cursor-row-resize hover:bg-[#007acc] transition-colors"
+        className="h-1 flex-shrink-0 cursor-row-resize transition-colors"
+        style={{ background: 'transparent' }}
         onMouseDown={onDragStart}
         onDoubleClick={toggleMaximize}
+        onMouseEnter={e => e.currentTarget.style.background = 'var(--accent)'}
+        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
       />
 
       {/* Tab bar */}
-      <div className="flex items-center h-9 bg-[#252526] border-b border-[#333] flex-shrink-0 px-2">
+      <div
+        className="flex items-center h-9 flex-shrink-0 px-2"
+        style={{ background: 'var(--bg-panel)', borderBottom: '1px solid var(--border)' }}
+      >
         {TABS.map(tab => (
           <button
             key={tab.id}
             onClick={() => setBottomTab(tab.id)}
-            className={`flex items-center gap-1.5 px-3 h-full text-[11px] font-medium tracking-wide border-b-2 transition-colors
-              ${activeBottomTab === tab.id
-                ? 'text-[#d4d4d4] border-[#007acc]'
-                : 'text-[#858585] border-transparent hover:text-[#cccccc]'
-              }`}
+            className="flex items-center gap-1.5 px-3 h-full text-[11px] font-medium tracking-wide border-b-2 transition-colors"
+            style={{
+              color: activeBottomTab === tab.id ? 'var(--text-bright)' : 'var(--text-secondary)',
+              borderBottomColor: activeBottomTab === tab.id ? 'var(--accent)' : 'transparent',
+            }}
+            onMouseEnter={e => { if (activeBottomTab !== tab.id) e.currentTarget.style.color = 'var(--text-primary)' }}
+            onMouseLeave={e => { if (activeBottomTab !== tab.id) e.currentTarget.style.color = 'var(--text-secondary)' }}
           >
             {tab.label}
             {tab.id === 'problems' && (errors > 0 || warnings > 0) && (
@@ -108,14 +103,20 @@ export default function BottomPanel({ markers = [], onGoToLine }) {
 
         <button
           onClick={toggleMaximize}
-          className="p-1 rounded text-[#858585] hover:text-[#d4d4d4] hover:bg-[#3a3a3a] transition-colors"
+          className="p-1 rounded transition-colors"
+          style={{ color: 'var(--text-secondary)' }}
+          onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-bright)'; e.currentTarget.style.background = 'var(--bg-hover)' }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'transparent' }}
           title={maximized ? 'Restore panel' : 'Maximize panel'}
         >
           {maximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
         </button>
         <button
           onClick={closeBottomPanel}
-          className="p-1 rounded text-[#858585] hover:text-[#d4d4d4] hover:bg-[#3a3a3a] transition-colors ml-1"
+          className="p-1 rounded transition-colors ml-1"
+          style={{ color: 'var(--text-secondary)' }}
+          onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-bright)'; e.currentTarget.style.background = 'var(--bg-hover)' }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'transparent' }}
           title="Close panel (Ctrl+J)"
         >
           <X size={13} />
@@ -123,15 +124,11 @@ export default function BottomPanel({ markers = [], onGoToLine }) {
       </div>
 
       {/* Content */}
-      <div className="flex-1 min-h-0 overflow-hidden">
-        {activeBottomTab === 'terminal' && <TerminalPanel />}
-        {activeBottomTab === 'problems' && <ProblemsPanel markers={markers} onGoToLine={onGoToLine} />}
-        {activeBottomTab === 'output' && <OutputPanel />}
-        {activeBottomTab === 'debug' && (
-          <div className="flex items-center justify-center h-full text-xs text-[#555]">
-            Debug console — coming soon
-          </div>
-        )}
+      <div className="flex-1 min-h-0 overflow-hidden" style={{ background: 'var(--bg-bottompanel)' }}>
+        {activeBottomTab === 'terminal'  && <TerminalPanel />}
+        {activeBottomTab === 'problems'  && <ProblemsPanel markers={markers} onGoToLine={onGoToLine} />}
+        {activeBottomTab === 'output'    && <OutputPanel />}
+        {activeBottomTab === 'debug'     && <DebugConsole />}
       </div>
     </div>
   )

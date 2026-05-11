@@ -3,6 +3,7 @@ import MonacoEditor from '@monaco-editor/react'
 import { useIDEStore } from '../../store/useIDEStore.js'
 import { writeFile, writeExternalFile } from '../../api.js'
 import { toast } from 'react-hot-toast'
+import { THEMES } from '../../themes.js'
 
 const LANG_MAP = {
   js: 'javascript', jsx: 'javascript', mjs: 'javascript',
@@ -23,7 +24,8 @@ function getLanguage(path) {
 
 // Keep a stable ref to the latest save function to avoid stale closures
 const Editor = forwardRef(function Editor({ onCursorChange, onMarkersChange }, ref) {
-  const { openFiles, activeFileId, markFileModified, updateFileContent, fontSize } = useIDEStore()
+  const { openFiles, activeFileId, markFileModified, updateFileContent, fontSize, theme } = useIDEStore()
+  const monacoTheme = THEMES[theme]?.monacoTheme || 'vs-dark'
   const monacoRef = useRef(null)
   const editorRef = useRef(null)
   // Always-fresh refs so imperative handle never goes stale
@@ -117,12 +119,11 @@ const Editor = forwardRef(function Editor({ onCursorChange, onMarkersChange }, r
   }, [fontSize])
 
   // Sync Monaco theme with IDE theme
-  const { theme } = useIDEStore()
   useEffect(() => {
     if (monacoRef.current) {
-      monacoRef.current.editor.setTheme(theme === 'light' ? 'vs' : 'vs-dark')
+      monacoRef.current.editor.setTheme(monacoTheme)
     }
-  }, [theme])
+  }, [monacoTheme])
 
   // Sync content when active file changes
   useEffect(() => {
@@ -146,13 +147,21 @@ const Editor = forwardRef(function Editor({ onCursorChange, onMarkersChange }, r
 
   if (!activeFile) {
     return (
-      <div className="h-full flex items-center justify-center bg-[#1e1e1e] text-[#555] text-sm select-none">
+      <div
+        className="h-full flex items-center justify-center text-sm select-none"
+        style={{ background: 'var(--bg-editor)', color: 'var(--text-muted)' }}
+      >
         <div className="text-center">
           <div className="text-5xl mb-4 opacity-20">⌨</div>
-          <div className="text-[#555]">Open a file to start editing</div>
-          <div className="text-xs mt-2 text-[#444]">
+          <div style={{ color: 'var(--text-muted)' }}>Open a file to start editing</div>
+          <div className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
             Use the Explorer or{' '}
-            <kbd className="bg-[#2d2d2d] px-1.5 py-0.5 rounded text-[#858585]">Ctrl+P</kbd>{' '}
+            <kbd
+              className="px-1.5 py-0.5 rounded text-[11px]"
+              style={{ background: 'var(--bg-input)', color: 'var(--text-secondary)' }}
+            >
+              Ctrl+P
+            </kbd>{' '}
             to open a file
           </div>
         </div>
@@ -165,7 +174,7 @@ const Editor = forwardRef(function Editor({ onCursorChange, onMarkersChange }, r
       height="100%"
       language={getLanguage(activeFile.path)}
       value={activeFile.content || ''}
-      theme={theme === 'light' ? 'vs' : 'vs-dark'}
+      theme={monacoTheme}
       onChange={handleChange}
       onMount={handleMount}
       options={{

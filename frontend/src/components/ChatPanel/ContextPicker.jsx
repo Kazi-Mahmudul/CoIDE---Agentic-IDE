@@ -10,6 +10,7 @@ const OPTIONS = [
   { id: 'terminal',  icon: Terminal,      label: '@terminal',  desc: 'Attach terminal output' },
   { id: 'selection', icon: Scissors,      label: '@selection', desc: 'Attach current editor selection' },
   { id: 'codebase',  icon: Database,      label: '@codebase',  desc: 'Attach full codebase summary' },
+  { id: 'docs',      icon: FileText,      label: '@docs',      desc: 'Attach markdown/docs files' },
 ]
 
 export default function ContextPicker({ onSelect, onClose, filter = '' }) {
