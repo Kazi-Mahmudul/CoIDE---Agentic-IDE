@@ -92,12 +92,8 @@ export default function Terminal({ cwd, onClose }) {
     setActiveTabId(first.id)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Listen for external split-terminal command ────────────────────────────
-  useEffect(() => {
-    const handler = () => splitH()
-    window.addEventListener('coide:split-terminal', handler)
-    return () => window.removeEventListener('coide:split-terminal', handler)
-  }, [splitH])
+  // ── Ref to always-current splitH (avoids temporal dead zone) ────────────
+  const splitHRef = useRef(null)
 
   // ── Cleanup all instances on unmount ─────────────────────────────────────
   useEffect(() => {
@@ -174,6 +170,16 @@ export default function Terminal({ cwd, onClose }) {
     setSplitMode('h')
     setSplitTabId(id)
   }, [splitMode, cwd, createInstance])
+
+  // Keep ref current so the event listener below always calls the latest splitH
+  splitHRef.current = splitH
+
+  // Register the external split-terminal event listener here, after splitH is defined
+  useEffect(() => {
+    const handler = () => splitHRef.current?.()
+    window.addEventListener('coide:split-terminal', handler)
+    return () => window.removeEventListener('coide:split-terminal', handler)
+  }, []) // empty deps — uses ref, never stale
 
   const splitV = useCallback(() => {
     if (splitMode) return

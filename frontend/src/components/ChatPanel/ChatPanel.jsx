@@ -269,9 +269,6 @@ export default function ChatPanel({ activeFile, tree = [], markers = [], onFileO
               case 'suggestions':
                 next.suggestions = event.items || []
                 break
-              case 'checkpoint':
-                next.checkpoint = { id: event.id, filesChanged: event.files_changed || [] }
-                break
               case 'done':
                 next.tokensUsed = event.tokens_used
                 break

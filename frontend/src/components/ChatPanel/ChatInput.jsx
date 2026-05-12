@@ -247,7 +247,7 @@ export default function ChatInput({
   }
 
   // Handle slash command
-  const handleSlashCommand = (cmd) => {
+  const handleSlashCommand = async (cmd) => {
     setShowSlash(false)
     setInput('')
     switch (cmd) {
