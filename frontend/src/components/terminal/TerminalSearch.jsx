@@ -37,9 +37,13 @@ export default function TerminalSearch({ onSearch, onClose }) {
     <button
       onClick={onClick}
       title={title}
-      className={`px-1.5 py-0.5 text-[10px] rounded transition-colors ${
-        active ? 'bg-[#007acc] text-white' : 'text-[#858585] hover:text-[#d4d4d4] hover:bg-[#3a3a3a]'
-      }`}
+      className="px-1.5 py-0.5 text-[10px] rounded transition-colors"
+      style={{
+        background: active ? 'var(--accent)' : 'transparent',
+        color: active ? 'var(--text-on-accent)' : 'var(--text-secondary)',
+      }}
+      onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-bright)' } }}
+      onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)' } }}
     >
       {children}
     </button>
@@ -47,7 +51,7 @@ export default function TerminalSearch({ onSearch, onClose }) {
 
   // Plain card — no absolute wrapper. Parent positions this.
   return (
-    <div className="bg-[#252526] border border-[#555] rounded-lg shadow-2xl w-72 p-2">
+    <div className="rounded-lg shadow-2xl w-72 p-2" style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-light)' }}>
       <div className="flex items-center gap-1">
         <input
           ref={inputRef}
@@ -56,7 +60,8 @@ export default function TerminalSearch({ onSearch, onClose }) {
           onChange={e => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Find in terminal…"
-          className="flex-1 bg-[#3c3c3c] border border-[#555] rounded px-2 py-1 text-xs text-[#d4d4d4] placeholder-[#555] focus:outline-none focus:border-[#007acc]"
+          className="flex-1 rounded px-2 py-1 text-xs placeholder:text-[var(--text-muted)] focus:outline-none"
+          style={{ background: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-primary)' }}
         />
         <ToggleBtn active={caseSensitive} onClick={() => setCaseSensitive(v => !v)} title="Match case">Aa</ToggleBtn>
         <ToggleBtn active={wholeWord} onClick={() => setWholeWord(v => !v)} title="Whole word">W</ToggleBtn>
@@ -64,14 +69,14 @@ export default function TerminalSearch({ onSearch, onClose }) {
       </div>
       <div className="flex items-center justify-between mt-1.5">
         <div className="flex gap-1">
-          <button onClick={findPrev} className="p-1 rounded hover:bg-[#3a3a3a] text-[#858585] hover:text-[#d4d4d4]" title="Previous (Shift+Enter)">
+          <button onClick={findPrev} className="p-1 rounded transition-colors" style={{ color: 'var(--text-secondary)' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-bright)' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)' }} title="Previous (Shift+Enter)">
             <ChevronUp size={13} />
           </button>
-          <button onClick={findNext} className="p-1 rounded hover:bg-[#3a3a3a] text-[#858585] hover:text-[#d4d4d4]" title="Next (Enter)">
+          <button onClick={findNext} className="p-1 rounded transition-colors" style={{ color: 'var(--text-secondary)' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-bright)' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)' }} title="Next (Enter)">
             <ChevronDown size={13} />
           </button>
         </div>
-        <button onClick={onClose} className="p-1 rounded hover:bg-[#3a3a3a] text-[#858585] hover:text-[#d4d4d4]" title="Close (Escape)">
+        <button onClick={onClose} className="p-1 rounded transition-colors" style={{ color: 'var(--text-secondary)' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-bright)' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)' }} title="Close (Escape)">
           <X size={13} />
         </button>
       </div>

@@ -1,20 +1,22 @@
 import React, { useState, useEffect } from 'react'
 import { GitBranch, AlertCircle, AlertTriangle, Bell, Palette } from 'lucide-react'
 import { useIDEStore } from '../../store/useIDEStore.js'
+import { authHeaders } from '../../api.js'
 
 export default function StatusBar({ cursorPosition, language, markers = [], onOpenThemePicker }) {
   const { openFiles, activeFileId } = useIDEStore()
   const [branch, setBranch] = useState(null)
+  const apiBase = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
 
   const errors   = markers.filter(m => m.severity === 8).length
   const warnings = markers.filter(m => m.severity === 4).length
 
   useEffect(() => {
-    fetch('http://localhost:8000/git/branch')
+    fetch(`${apiBase}/git/branch`, { headers: authHeaders() })
       .then(r => r.ok ? r.json() : null)
       .then(d => d?.branch && setBranch(d.branch))
       .catch(() => {})
-  }, [])
+  }, [apiBase])
 
   const btnStyle = {
     display: 'flex', alignItems: 'center', gap: 2,
@@ -28,7 +30,7 @@ export default function StatusBar({ cursorPosition, language, markers = [], onOp
       onClick={onClick}
       title={title}
       style={btnStyle}
-      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.15)'}
+      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
     >
       {children}

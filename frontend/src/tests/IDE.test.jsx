@@ -10,6 +10,7 @@ import { useIDEStore } from '../store/useIDEStore.js'
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
 vi.mock('../api.js', () => ({
+  BASE: 'http://localhost:8000',
   getFileTree: vi.fn(() => Promise.resolve({ tree: [], root: '/workspace' })),
   readFile: vi.fn(() => Promise.resolve({ path: 'test.js', content: 'console.log("hi")' })),
   writeFile: vi.fn(() => Promise.resolve({ status: 'ok' })),
@@ -17,6 +18,10 @@ vi.mock('../api.js', () => ({
   writeExternalFile: vi.fn(() => Promise.resolve({ status: 'ok' })),
   getExternalTree: vi.fn(() => Promise.resolve({ tree: [], root: '/' })),
   getFilesystemRoots: vi.fn(() => Promise.resolve({ roots: [{ name: 'C:/', path: 'C:/' }] })),
+  getAuthToken: vi.fn(() => 'test-token'),
+  setAuthToken: vi.fn(),
+  getCurrentUser: vi.fn(() => Promise.resolve({ id: 'u1', username: 'test' })),
+  authHeaders: vi.fn((h = {}) => ({ ...h, Authorization: 'Bearer test-token' })),
   streamAgentChat: vi.fn(),
 }))
 

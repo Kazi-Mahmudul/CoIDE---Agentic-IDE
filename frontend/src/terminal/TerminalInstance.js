@@ -17,8 +17,10 @@
  */
 
 import { v4 as uuidv4 } from 'uuid'
+import { getTerminalWsBase } from './config.js'
+import { getAuthToken } from '../api.js'
 
-const WS_BASE = 'ws://localhost:8000/ws/terminal'
+const WS_BASE = getTerminalWsBase()
 const MAX_RECONNECT = 5
 const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16000]
 const PING_INTERVAL = 30_000
@@ -250,6 +252,8 @@ export class TerminalInstance {
     }
 
     const params = new URLSearchParams({ session_id: this.sessionId })
+    const token = getAuthToken()
+    if (token) params.set('token', token)
     if (this.cwd) params.set('cwd', this.cwd)
     const url = `${WS_BASE}?${params}`
 

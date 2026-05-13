@@ -1,8 +1,7 @@
 import React, { useState, useCallback } from 'react'
 import { Search, ChevronRight, ChevronDown } from 'lucide-react'
 import { toast } from 'react-hot-toast'
-
-const BASE = 'http://localhost:8000'
+import { searchWorkspace } from '../../api.js'
 
 export default function SearchPanel({ onFileOpen }) {
   const [query, setQuery] = useState('')
@@ -17,9 +16,7 @@ export default function SearchPanel({ onFileOpen }) {
     if (!q.trim()) { setResults([]); return }
     setLoading(true)
     try {
-      const res = await fetch(`${BASE}/files/search?q=${encodeURIComponent(q)}`)
-      if (!res.ok) throw new Error(res.statusText)
-      const data = await res.json()
+      const data = await searchWorkspace(q, { caseSensitive, wholeWord, useRegex })
       setResults(data.results || [])
       // Auto-expand all files
       const exp = {}
@@ -29,7 +26,7 @@ export default function SearchPanel({ onFileOpen }) {
       toast.error(`Search failed: ${e.message}`)
       setResults([])
     } finally { setLoading(false) }
-  }, [])
+  }, [caseSensitive, wholeWord, useRegex])
 
   const grouped = results.reduce((acc, r) => {
     if (!acc[r.file]) acc[r.file] = []
@@ -40,7 +37,7 @@ export default function SearchPanel({ onFileOpen }) {
   const ToggleBtn = ({ active, onClick, title, children }) => (
     <button onClick={onClick} title={title}
       className="w-6 h-6 flex items-center justify-center rounded text-xs transition-colors"
-      style={{ background: active ? 'var(--accent)' : 'transparent', color: active ? '#fff' : 'var(--text-secondary)' }}
+      style={{ background: active ? 'var(--accent)' : 'transparent', color: active ? 'var(--text-on-accent)' : 'var(--text-secondary)' }}
       onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--bg-hover)' }}
       onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}>
       {children}

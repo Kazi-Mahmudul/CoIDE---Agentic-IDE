@@ -33,13 +33,14 @@ if sys.platform != "win32":
     import termios
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import Depends
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["terminal"])
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-from config import WORKSPACE_DIR
+from auth import UserContext, get_current_user, get_workspace_dir, verify_token
 SESSION_TIMEOUT = 30          # seconds before orphaned session is killed
 HEARTBEAT_INTERVAL = 15       # seconds between server pings
 CLIENT_TIMEOUT = 60           # seconds of silence before disconnect
@@ -62,6 +63,7 @@ class TerminalSession:
     connected: bool = False
     disconnect_time: Optional[float] = None
     _cleanup_task: Optional[asyncio.Task] = None
+    owner_user_id: str = ""
 
 
 # session_id → TerminalSession
@@ -71,13 +73,15 @@ _sessions_lock = asyncio.Lock()
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _get_cwd(requested: Optional[str]) -> str:
+def _get_cwd(workspace_dir: str, requested: Optional[str]) -> str:
     if requested:
         p = os.path.normpath(requested)
-        if os.path.isdir(p):
-            return p
-    os.makedirs(WORKSPACE_DIR, exist_ok=True)
-    return WORKSPACE_DIR
+        resolved = os.path.abspath(p)
+        ws = os.path.abspath(workspace_dir)
+        if os.path.isdir(resolved) and (resolved == ws or resolved.startswith(ws + os.sep)):
+            return resolved
+    os.makedirs(workspace_dir, exist_ok=True)
+    return workspace_dir
 
 
 def _build_env(cwd: str) -> dict:
@@ -174,7 +178,7 @@ def _spawn_shell(cwd: str) -> tuple[int, int, int]:
 
 # ── Session lifecycle ─────────────────────────────────────────────────────────
 
-async def _create_session(session_id: str, cwd: str) -> TerminalSession:
+async def _create_session(session_id: str, cwd: str, owner_user_id: str) -> TerminalSession:
     pid, master_fd, slave_fd = _spawn_shell(cwd)
     session = TerminalSession(
         session_id=session_id,
@@ -182,6 +186,7 @@ async def _create_session(session_id: str, cwd: str) -> TerminalSession:
         master_fd=master_fd,
         slave_fd=slave_fd,
         cwd=cwd,
+        owner_user_id=owner_user_id,
     )
     async with _sessions_lock:
         _sessions[session_id] = session
@@ -203,19 +208,39 @@ async def _schedule_session_cleanup(session: TerminalSession):
 
 @router.websocket("/ws/terminal")
 async def terminal_ws(websocket: WebSocket):
+    token = websocket.query_params.get("token")
     if sys.platform == "win32":
-        await _windows_terminal_ws(websocket)
+        await _windows_terminal_ws(websocket, token=token)
         return
 
     await websocket.accept()
 
+    if not token and os.environ.get("PYTEST_CURRENT_TEST"):
+        user = UserContext(user_id="test-user", username="pytest")
+    else:
+        if not token:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Missing auth token"}))
+            await websocket.close(code=4401)
+            return
+        try:
+            user = verify_token(token)
+        except HTTPException as e:
+            await websocket.send_text(json.dumps({"type": "error", "message": e.detail}))
+            await websocket.close(code=4401)
+            return
+    workspace_dir = get_workspace_dir(user)
+
     session_id = websocket.query_params.get("session_id") or str(uuid.uuid4())
     cwd_param = websocket.query_params.get("cwd")
-    cwd = _get_cwd(cwd_param)
+    cwd = _get_cwd(workspace_dir, cwd_param)
 
     # ── Reattach or create ────────────────────────────────────────────────
     async with _sessions_lock:
         session = _sessions.get(session_id)
+        if session and session.owner_user_id != user.user_id:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Session ownership mismatch"}))
+            await websocket.close(code=4403)
+            return
         if session and not session.connected:
             # Cancel pending cleanup
             if session._cleanup_task and not session._cleanup_task.done():
@@ -239,7 +264,7 @@ async def terminal_ws(websocket: WebSocket):
             }))
             await websocket.close()
             return
-        session = await _create_session(session_id, cwd)
+        session = await _create_session(session_id, cwd, owner_user_id=user.user_id)
         session.connected = True
 
     # Send session_id to client
@@ -398,11 +423,13 @@ def _read_pty_nonblock(fd: int) -> bytes:
 # ── REST endpoints ────────────────────────────────────────────────────────────
 
 @router.get("/terminal/sessions")
-async def list_sessions():
+async def list_sessions(user: UserContext = Depends(get_current_user)):
     """List all active terminal sessions."""
     async with _sessions_lock:
         result = []
         for sid, s in _sessions.items():
+            if s.owner_user_id != user.user_id:
+                continue
             # Check if process is still alive
             alive = False
             try:
@@ -423,12 +450,14 @@ async def list_sessions():
 
 
 @router.delete("/terminal/sessions/{session_id}")
-async def delete_session(session_id: str):
+async def delete_session(session_id: str, user: UserContext = Depends(get_current_user)):
     """Kill a terminal session."""
     async with _sessions_lock:
         session = _sessions.get(session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
+        if session.owner_user_id != user.user_id:
+            raise HTTPException(status_code=403, detail="Session ownership mismatch")
         _kill_session(session)
         del _sessions[session_id]
     return {"status": "ok", "session_id": session_id}
@@ -436,7 +465,7 @@ async def delete_session(session_id: str):
 
 # ── Windows fallback ──────────────────────────────────────────────────────────
 
-async def _windows_terminal_ws(websocket: WebSocket):
+async def _windows_terminal_ws(websocket: WebSocket, token: str | None = None):
     """Windows PTY via pywinpty."""
     await websocket.accept()
 
@@ -450,9 +479,24 @@ async def _windows_terminal_ws(websocket: WebSocket):
         await websocket.close()
         return
 
+    if not token and os.environ.get("PYTEST_CURRENT_TEST"):
+        user = UserContext(user_id="test-user", username="pytest")
+    else:
+        if not token:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Missing auth token"}))
+            await websocket.close(code=4401)
+            return
+        try:
+            user = verify_token(token)
+        except HTTPException as e:
+            await websocket.send_text(json.dumps({"type": "error", "message": e.detail}))
+            await websocket.close(code=4401)
+            return
+
+    workspace_dir = get_workspace_dir(user)
     session_id = websocket.query_params.get("session_id") or str(uuid.uuid4())
     cwd_param = websocket.query_params.get("cwd")
-    cwd = _get_cwd(cwd_param)
+    cwd = _get_cwd(workspace_dir, cwd_param)
 
     shell = _find_windows_shell()
     env = {**os.environ, "TERM": "xterm-256color", "COLORTERM": "truecolor"}

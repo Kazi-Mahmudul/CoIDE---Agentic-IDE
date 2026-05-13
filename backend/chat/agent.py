@@ -34,6 +34,7 @@ async def run_agent(
     mode: str = "auto",
     settings: dict = None,
     abort_event: Optional[asyncio.Event] = None,
+    workspace_dir: str = WORKSPACE_DIR,
 ) -> AsyncGenerator[str, None]:
     """
     Main agentic loop. Yields NDJSON lines.
@@ -60,6 +61,7 @@ async def run_agent(
     # Build system prompt
     system_content = build_system_prompt(
         mode=detected_mode,
+        workspace_dir=workspace_dir,
         active_file=context.get("active_file"),
         active_file_content=context.get("active_file_content"),
         selection=context.get("selection"),
@@ -94,45 +96,41 @@ async def run_agent(
             payload = {
                 "model": model,
                 "messages": llm_messages,
-                "stream": True,
+                "stream": False,
                 "max_tokens": max_tokens,
             }
             if temperature is not None:
                 payload["temperature"] = temperature
 
             try:
-                async with client.stream("POST", f"{base_url}/chat/completions",
-                                         headers=headers, json=payload) as resp:
-                    if resp.status_code != 200:
-                        body = await resp.aread()
-                        yield _emit({"type": "error", "message": f"API error {resp.status_code}: {body.decode()[:200]}"})
-                        return
+                resp = await client.post(
+                    f"{base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                )
+                if resp.status_code != 200:
+                    yield _emit({"type": "error", "message": f"API error {resp.status_code}: {resp.text[:200]}"})
+                    return
 
-                    full_text = ""
-                    async for line in resp.aiter_lines():
+                data = resp.json()
+                full_text = data.get("choices", [{}])[0].get("message", {}).get("content", "") or ""
+                if full_text:
+                    chunk_size = 40
+                    for i in range(0, len(full_text), chunk_size):
                         if abort_event and abort_event.is_set():
                             break
-                        if not line or not line.startswith("data: "):
-                            continue
-                        data = line[6:]
-                        if data == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(data)
-                            delta = chunk["choices"][0]["delta"].get("content", "")
-                            if delta:
-                                full_text += delta
-                                yield _emit({"type": "text", "content": delta})
-                        except Exception:
-                            continue
+                        yield _emit({"type": "text", "content": full_text[i:i + chunk_size]})
+                        await asyncio.sleep(0)
 
-                    # Follow-up suggestions
-                    suggestions = _generate_suggestions(full_text, last_user)
-                    if suggestions:
-                        yield _emit({"type": "suggestions", "items": suggestions})
+                # Follow-up suggestions
+                suggestions = _generate_suggestions(full_text, last_user)
+                if suggestions:
+                    yield _emit({"type": "suggestions", "items": suggestions})
 
+                tokens = data.get("usage", {}).get("total_tokens")
+                if not tokens:
                     tokens = len(full_text) // 4 * 4  # rough estimate
-                    yield _emit({"type": "done", "tokens_used": tokens})
+                yield _emit({"type": "done", "tokens_used": tokens})
 
             except httpx.TimeoutException:
                 yield _emit({"type": "error", "message": "Request timed out. Try a shorter message or faster model."})
@@ -227,11 +225,11 @@ async def run_agent(
                         if tool_name in ("write_file", "edit_file", "create_file", "delete_file", "rename_file"):
                             path = tool_args.get("path") or tool_args.get("old_path", "")
                             if path and path not in modified_files:
-                                modified_files[path] = read_file_for_checkpoint(path)
+                                modified_files[path] = read_file_for_checkpoint(path, workspace_dir)
 
                         # Execute
                         t0 = time.monotonic()
-                        result = await execute_tool(tool_name, tool_args)
+                        result = await execute_tool(tool_name, tool_args, workspace_dir=workspace_dir)
                         duration_ms = int((time.monotonic() - t0) * 1000)
 
                         # Emit tool output
@@ -271,7 +269,7 @@ async def run_agent(
 
             # Save checkpoint if files were modified
             if modified_files:
-                save_checkpoint(checkpoint_id, modified_files)
+                save_checkpoint(checkpoint_id, context.get("user_id", "unknown"), modified_files)
                 yield _emit({
                     "type": "checkpoint",
                     "id": checkpoint_id,

@@ -14,7 +14,7 @@ const PANEL_TITLES = {
   chat:       'AGENT CHAT',
 }
 
-export default function SidePanel({ tree, activeFilePath, externalRoot, onFileOpen, onRefresh, onOpenFolder }) {
+export default function SidePanel({ tree, activeFilePath, externalRoot, onFileOpen, onRefresh, onOpenFolder, onRequestInput }) {
   const { sidePanelOpen, sidePanelWidth, activeActivityTab, closeSidePanel, setSidePanelWidth } = useIDEStore()
 
   const dragging = useRef(false)
@@ -60,6 +60,7 @@ export default function SidePanel({ tree, activeFilePath, externalRoot, onFileOp
             onFileOpen={onFileOpen}
             onRefresh={onRefresh}
             onOpenFolder={onOpenFolder}
+            onRequestInput={onRequestInput}
           />
         )
       case 'search':

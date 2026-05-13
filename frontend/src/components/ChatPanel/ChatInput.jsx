@@ -5,8 +5,8 @@ import ContextPicker from './ContextPicker.jsx'
 import FilePicker from './FilePicker.jsx'
 import ContextChips from './ContextChips.jsx'
 import ImagePreview from './ImagePreview.jsx'
+import { authHeaders, BASE, getFileTree, getGitStatus, readFile } from '../../api.js'
 
-const BASE = 'http://localhost:8000'
 const SLASH_COMMANDS = [
   { cmd: '/clear',   desc: 'Clear current thread' },
   { cmd: '/new',     desc: 'New thread' },
@@ -155,28 +155,27 @@ export default function ChatInput({
         break
       case 'codebase':
         try {
-          const res = await fetch(`${BASE}/files/tree`)
-          const data = await res.json()
+          const data = await getFileTree()
           onAddChip?.({ id: 'codebase', type: 'folder', label: 'Codebase', content: JSON.stringify(data.tree) })
         } catch { toast.error('Failed to load codebase') }
         break
       case 'git':
         try {
-          const res = await fetch(`${BASE}/chat/message`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ messages: [{ role: 'user', content: 'git status' }], context: {}, model_config: {}, mode: 'agent' })
+          const status = await getGitStatus()
+          onAddChip?.({
+            id: 'git',
+            type: 'file',
+            label: 'Git status',
+            content: JSON.stringify(status, null, 2),
           })
-          onAddChip?.({ id: 'git', type: 'file', label: 'Git status', content: 'git status attached' })
-        } catch {}
+        } catch {
+          toast('No git repository detected', { icon: 'ℹ️' })
+        }
         break
       case 'web':
-        const url = prompt('Enter URL to fetch:')
-        if (url) {
-          try {
-            const res = await fetch(`${BASE}/files/read?path=.`)
-            onAddChip?.({ id: `web_${Date.now()}`, type: 'web', label: url.slice(0, 30), content: `URL: ${url}`, url })
-          } catch {}
+        {
+          const url = prompt('Enter URL to fetch:')
+          if (url) onAddChip?.({ id: `web_${Date.now()}`, type: 'web', label: url.slice(0, 30), content: `URL: ${url}`, url })
         }
         break
       case 'terminal': {
@@ -196,9 +195,7 @@ export default function ChatInput({
       case 'docs': {
         // Attach all markdown files from the workspace
         try {
-          const res = await fetch(`${BASE}/files/search?q=`)
-          const treeRes = await fetch(`${BASE}/files/tree`)
-          const treeData = await treeRes.json()
+          const treeData = await getFileTree()
           const mdFiles = []
           const findMd = (nodes) => {
             for (const n of nodes) {
@@ -209,8 +206,7 @@ export default function ChatInput({
           findMd(treeData.tree || [])
           if (mdFiles.length === 0) { toast('No documentation files found', { icon: 'ℹ️' }); break }
           for (const f of mdFiles.slice(0, 5)) {
-            const fRes = await fetch(`${BASE}/files/read?path=${encodeURIComponent(f.path)}`)
-            const fData = await fRes.json()
+            const fData = await readFile(f.path)
             onAddChip?.({
               id: `doc_${f.path}`, type: 'file', label: f.name,
               content: fData.content?.slice(0, 4000) || '', path: f.path,
@@ -231,8 +227,7 @@ export default function ChatInput({
     const lastHash = input.lastIndexOf('#')
     setInput(input.slice(0, lastHash))
     try {
-      const res = await fetch(`${BASE}/files/read?path=${encodeURIComponent(file.path)}`)
-      const data = await res.json()
+      const data = await readFile(file.path)
       onAddChip?.({
         id: `file_${file.path}`,
         type: 'file',
@@ -265,7 +260,7 @@ export default function ChatInput({
             toast('No checkpoint to undo', { icon: 'ℹ️' })
             break
           }
-          const res = await fetch(`${BASE}/chat/checkpoint/${lastCheckpoint}/restore`, { method: 'POST' })
+          const res = await fetch(`${BASE}/chat/checkpoint/${lastCheckpoint}/restore`, { method: 'POST', headers: authHeaders() })
           if (!res.ok) throw new Error(await res.text())
           const data = await res.json()
           toast.success(`Restored ${data.restored_files?.length || 0} file(s)`)
@@ -284,7 +279,7 @@ export default function ChatInput({
     const formData = new FormData()
     for (const f of Array.from(files).slice(0, 10)) formData.append('files', f)
     try {
-      const res = await fetch(`${BASE}/chat/upload`, { method: 'POST', body: formData })
+      const res = await fetch(`${BASE}/chat/upload`, { method: 'POST', body: formData, headers: authHeaders() })
       if (!res.ok) throw new Error(await res.text())
       const data = await res.json()
       for (const f of data.files) {
@@ -320,7 +315,7 @@ export default function ChatInput({
   const filteredSlash = SLASH_COMMANDS.filter(c => c.cmd.includes(slashFilter))
 
   return (
-    <div ref={containerRef} className="flex-shrink-0 border-t border-[#333] relative">
+    <div ref={containerRef} className="flex-shrink-0 border-t relative" style={{ borderColor: 'var(--border)' }}>
       {/* Context chips */}
       <ContextChips chips={contextChips} onRemove={onRemoveChip} />
 
@@ -337,7 +332,10 @@ export default function ChatInput({
       <div className="flex items-center gap-2 px-3 pt-2">
         <button
           onClick={onOpenSettings}
-          className="text-[10px] px-2 py-0.5 bg-[#2d2d2d] border border-[#444] rounded-full text-[#555] hover:text-[#858585] hover:border-[#555] transition-colors truncate max-w-[140px]"
+          className="text-[10px] px-2 py-0.5 rounded-full transition-colors truncate max-w-[140px]"
+          style={{ background: 'var(--bg-input)', border: '1px solid var(--border-light)', color: 'var(--text-secondary)' }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-bright)'; e.currentTarget.style.borderColor = 'var(--border-focus)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.borderColor = 'var(--border-light)' }}
           title="Click to change model"
         >
           {modelName}
@@ -360,8 +358,8 @@ export default function ChatInput({
           placeholder="Ask anything, @ to add context, # to reference files…"
           disabled={streaming}
           rows={1}
-          className="w-full bg-transparent text-sm text-[#d4d4d4] placeholder-[#444] resize-none outline-none leading-relaxed disabled:opacity-60"
-          style={{ minHeight: '24px', maxHeight: '160px' }}
+          className="w-full bg-transparent text-sm resize-none outline-none leading-relaxed disabled:opacity-60"
+          style={{ color: 'var(--text-primary)', minHeight: '24px', maxHeight: '160px' }}
         />
       </div>
 
@@ -372,31 +370,31 @@ export default function ChatInput({
           accept=".py,.js,.ts,.jsx,.tsx,.html,.css,.json,.md,.txt,.yaml,.yml,.toml,.env,.sh,.rs,.go,.java,.cpp,.c,.h,.rb,.php,.sql,.png,.jpg,.jpeg,.gif,.webp,.svg"
           onChange={e => handleFileUpload(e.target.files)} />
         <button onClick={() => fileInputRef.current?.click()}
-          className="p-1.5 rounded text-[#555] hover:text-[#858585] hover:bg-[#2d2d2d] transition-colors" title="Attach file">
+          className="p-1.5 rounded transition-colors" style={{ color: 'var(--text-secondary)' }} onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-bright)'; e.currentTarget.style.background = 'var(--bg-hover)' }} onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'transparent' }} title="Attach file">
           <Paperclip size={14} />
         </button>
 
         {/* @ context */}
         <button onClick={() => { setShowContextPicker(true); setInput(input + '@') }}
-          className="p-1.5 rounded text-[#555] hover:text-[#858585] hover:bg-[#2d2d2d] transition-colors" title="Add context (@)">
+          className="p-1.5 rounded transition-colors" style={{ color: 'var(--text-secondary)' }} onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-bright)'; e.currentTarget.style.background = 'var(--bg-hover)' }} onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'transparent' }} title="Add context (@)">
           <AtSign size={14} />
         </button>
 
         {/* # file */}
         <button onClick={() => { setShowFilePicker(true); setInput(input + '#') }}
-          className="p-1.5 rounded text-[#555] hover:text-[#858585] hover:bg-[#2d2d2d] transition-colors" title="Reference file (#)">
+          className="p-1.5 rounded transition-colors" style={{ color: 'var(--text-secondary)' }} onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-bright)'; e.currentTarget.style.background = 'var(--bg-hover)' }} onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'transparent' }} title="Reference file (#)">
           <Hash size={14} />
         </button>
 
         {/* Web search toggle */}
         <button
-          className="p-1.5 rounded text-[#555] hover:text-[#858585] hover:bg-[#2d2d2d] transition-colors" title="Web search">
+          className="p-1.5 rounded transition-colors" style={{ color: 'var(--text-secondary)' }} onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-bright)'; e.currentTarget.style.background = 'var(--bg-hover)' }} onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'transparent' }} title="Web search">
           <Globe size={14} />
         </button>
 
         {/* Thinking toggle */}
         <button
-          className="p-1.5 rounded text-[#555] hover:text-[#858585] hover:bg-[#2d2d2d] transition-colors" title="Extended thinking">
+          className="p-1.5 rounded transition-colors" style={{ color: 'var(--text-secondary)' }} onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-bright)'; e.currentTarget.style.background = 'var(--bg-hover)' }} onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'transparent' }} title="Extended thinking">
           <Brain size={14} />
         </button>
 
@@ -406,8 +404,13 @@ export default function ChatInput({
           className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-colors ml-0.5 ${
             modeOverride === 'agent' ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30' :
             modeOverride === 'chat' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' :
-            'bg-[#2d2d2d] text-[#555] border border-[#444]'
+            ''
           }`}
+          style={modeOverride === 'agent'
+            ? { background: 'color-mix(in srgb, var(--text-warning) 14%, transparent)', color: 'var(--text-warning)', border: '1px solid color-mix(in srgb, var(--text-warning) 35%, transparent)' }
+            : modeOverride === 'chat'
+              ? { background: 'color-mix(in srgb, var(--text-info) 14%, transparent)', color: 'var(--text-info)', border: '1px solid color-mix(in srgb, var(--text-info) 35%, transparent)' }
+              : { background: 'var(--bg-input)', color: 'var(--text-secondary)', border: '1px solid var(--border-light)' }}
           title="Toggle mode (auto → agent → chat)"
         >
           {modeOverride === 'agent' ? <><Zap size={9} /> AGENT</> :
@@ -418,7 +421,7 @@ export default function ChatInput({
         <div className="flex-1" />
 
         {/* Token counter */}
-        <span className={`text-[10px] mr-2 ${tokenWarning ? 'text-yellow-500' : 'text-[#444]'}`}>
+        <span className="text-[10px] mr-2" style={{ color: tokenWarning ? 'var(--text-warning)' : 'var(--text-muted)' }}>
           ~{tokenCount.toLocaleString()} / {(maxTokens / 1000).toFixed(0)}k
         </span>
 
@@ -435,7 +438,8 @@ export default function ChatInput({
           <button
             onClick={handleSend}
             disabled={!input.trim() && images.length === 0}
-            className="p-1.5 bg-[#007acc] hover:bg-[#0098ff] disabled:bg-[#2d2d2d] disabled:text-[#444] text-white rounded transition-colors"
+            className="p-1.5 rounded transition-colors"
+            style={{ background: 'var(--accent)', color: 'var(--text-on-accent)' }}
             title="Send (Enter)"
           >
             <Send size={14} />
@@ -465,13 +469,16 @@ export default function ChatInput({
 
       {/* Slash commands */}
       {showSlash && filteredSlash.length > 0 && (
-        <div className="absolute bottom-full left-3 mb-1 w-56 bg-[#252526] border border-[#454545] rounded-lg shadow-2xl overflow-hidden z-50">
-          <div className="px-3 py-1 border-b border-[#333] text-[10px] text-[#555] uppercase tracking-wider">Commands</div>
+        <div className="absolute bottom-full left-3 mb-1 w-56 rounded-lg shadow-2xl overflow-hidden z-50" style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-light)' }}>
+          <div className="px-3 py-1 border-b text-[10px] uppercase tracking-wider" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>Commands</div>
           {filteredSlash.map(c => (
             <button key={c.cmd} onClick={() => handleSlashCommand(c.cmd)}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left text-[#cccccc] hover:bg-[#094771] transition-colors">
-              <span className="font-mono text-[#007acc]">{c.cmd}</span>
-              <span className="text-[#555]">{c.desc}</span>
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors"
+              style={{ color: 'var(--text-primary)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-selected)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+              <span className="font-mono" style={{ color: 'var(--accent)' }}>{c.cmd}</span>
+              <span style={{ color: 'var(--text-muted)' }}>{c.desc}</span>
             </button>
           ))}
         </div>

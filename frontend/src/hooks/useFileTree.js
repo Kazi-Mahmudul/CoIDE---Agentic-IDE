@@ -10,8 +10,8 @@ export function useFileTree(externalRoot = null) {
   const pollTimer = useRef(null)
   const lastTreeHash = useRef('')
 
-  const refresh = useCallback(async () => {
-    setLoading(true)
+  const refresh = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       let data
       if (externalRoot) {
@@ -27,9 +27,11 @@ export function useFileTree(externalRoot = null) {
         setRootPath(data.root || null)
       }
     } catch (e) {
-      console.error('Failed to load file tree:', e)
+      if (!/bearer token|token|unauthorized|401/i.test(String(e?.message || ''))) {
+        console.error('Failed to load file tree:', e)
+      }
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [externalRoot])
 
@@ -40,7 +42,7 @@ export function useFileTree(externalRoot = null) {
 
   // Auto-poll to catch files created by the agent
   useEffect(() => {
-    pollTimer.current = setInterval(refresh, POLL_INTERVAL)
+    pollTimer.current = setInterval(() => refresh(true), POLL_INTERVAL)
     return () => clearInterval(pollTimer.current)
   }, [refresh])
 

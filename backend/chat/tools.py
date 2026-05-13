@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 import time
+import contextvars
 from pathlib import Path
 from typing import Optional
 
@@ -20,6 +21,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import WORKSPACE_DIR
 
 SKIP_DIRS = {"node_modules", "__pycache__", ".git", "venv", ".venv", "dist", ".next", "build", ".cache"}
+DANGEROUS_PATTERNS = ("rm -rf /", "del /f /s /q", "format ", "mkfs", ":(){:|:&};:", "shutdown", "reboot")
+_workspace_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("workspace_dir", default=None)
+
+
+def set_workspace_dir(workspace_dir: str):
+    _workspace_var.set(workspace_dir)
+
+
+def get_workspace_dir() -> str:
+    return _workspace_var.get() or WORKSPACE_DIR
 
 
 def _safe(path: str) -> str:
@@ -28,10 +39,14 @@ def _safe(path: str) -> str:
         if path.startswith(prefix):
             path = path[len(prefix):]
             break
-    resolved = os.path.normpath(os.path.join(WORKSPACE_DIR, path))
-    if not resolved.startswith(os.path.normpath(WORKSPACE_DIR)):
+    workspace_dir = get_workspace_dir()
+    resolved = Path(workspace_dir).joinpath(path).resolve()
+    workspace = Path(workspace_dir).resolve()
+    try:
+        resolved.relative_to(workspace)
+    except ValueError:
         raise ValueError(f"Path traversal blocked: {path}")
-    return resolved
+    return str(resolved)
 
 
 # ── File tools ────────────────────────────────────────────────────────────────
@@ -52,7 +67,7 @@ async def read_file(path: str) -> str:
 async def write_file(path: str, content: str) -> str:
     safe = _safe(path)
     try:
-        os.makedirs(os.path.dirname(safe) or WORKSPACE_DIR, exist_ok=True)
+        os.makedirs(os.path.dirname(safe) or get_workspace_dir(), exist_ok=True)
         with open(safe, "w", encoding="utf-8") as f:
             f.write(content)
         lines = content.splitlines()
@@ -85,7 +100,7 @@ async def edit_file(path: str, old_str: str, new_str: str) -> str:
 async def create_file(path: str, content: str = "") -> str:
     safe = _safe(path)
     try:
-        os.makedirs(os.path.dirname(safe) or WORKSPACE_DIR, exist_ok=True)
+        os.makedirs(os.path.dirname(safe) or get_workspace_dir(), exist_ok=True)
         if os.path.exists(safe):
             return f"File already exists: {path}"
         with open(safe, "w", encoding="utf-8") as f:
@@ -113,7 +128,7 @@ async def rename_file(old_path: str, new_path: str) -> str:
     old_safe = _safe(old_path)
     new_safe = _safe(new_path)
     try:
-        os.makedirs(os.path.dirname(new_safe) or WORKSPACE_DIR, exist_ok=True)
+        os.makedirs(os.path.dirname(new_safe) or get_workspace_dir(), exist_ok=True)
         shutil.move(old_safe, new_safe)
         return f"Renamed: {old_path} → {new_path}"
     except Exception as e:
@@ -121,7 +136,7 @@ async def rename_file(old_path: str, new_path: str) -> str:
 
 
 async def list_files(path: str = ".") -> str:
-    safe = _safe(path) if path and path != "." else WORKSPACE_DIR
+    safe = _safe(path) if path and path != "." else get_workspace_dir()
     if not os.path.isdir(safe):
         return f"Error: Directory not found: {path}"
     lines = []
@@ -142,14 +157,14 @@ async def list_files(path: str = ".") -> str:
             if os.path.isdir(full):
                 ext = "    " if is_last else "│   "
                 _walk(full, prefix + ext, depth + 1)
-    rel = os.path.relpath(safe, WORKSPACE_DIR)
+    rel = os.path.relpath(safe, get_workspace_dir())
     lines.append(f"{rel if rel != '.' else 'workspace'}/")
     _walk(safe)
     return "\n".join(lines)
 
 
 async def search_files(query: str, path: str = ".", file_pattern: str = "*") -> str:
-    safe = _safe(path) if path and path != "." else WORKSPACE_DIR
+    safe = _safe(path) if path and path != "." else get_workspace_dir()
     results = []
     for root, dirs, files in os.walk(safe):
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith('.')]
@@ -157,7 +172,7 @@ async def search_files(query: str, path: str = ".", file_pattern: str = "*") -> 
             if not fnmatch.fnmatch(fname, file_pattern):
                 continue
             fpath = os.path.join(root, fname)
-            rel = os.path.relpath(fpath, WORKSPACE_DIR)
+            rel = os.path.relpath(fpath, get_workspace_dir())
             try:
                 with open(fpath, "r", encoding="utf-8", errors="strict") as f:
                     for lineno, line in enumerate(f, 1):
@@ -172,8 +187,9 @@ async def search_files(query: str, path: str = ".", file_pattern: str = "*") -> 
 
 async def glob_files(pattern: str) -> str:
     matches = []
-    for p in Path(WORKSPACE_DIR).rglob(pattern):
-        rel = p.relative_to(WORKSPACE_DIR)
+    workspace_dir = get_workspace_dir()
+    for p in Path(workspace_dir).rglob(pattern):
+        rel = p.relative_to(workspace_dir)
         parts = rel.parts
         if any(part in SKIP_DIRS or part.startswith('.') for part in parts):
             continue
@@ -200,12 +216,15 @@ async def read_multiple_files(paths: list) -> str:
 # ── Terminal tools ────────────────────────────────────────────────────────────
 
 async def run_command(command: str, timeout: int = 30) -> str:
+    lowered = command.lower()
+    if any(p in lowered for p in DANGEROUS_PATTERNS):
+        return "Error: Command blocked for safety."
     try:
         proc = await asyncio.create_subprocess_shell(
             command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
-            cwd=WORKSPACE_DIR,
+            cwd=get_workspace_dir(),
         )
         try:
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
@@ -257,14 +276,15 @@ async def get_codebase_summary() -> str:
     top_level = []
 
     try:
+        workspace_dir = get_workspace_dir()
         top_level = [
-            f for f in sorted(os.listdir(WORKSPACE_DIR))
+            f for f in sorted(os.listdir(workspace_dir))
             if not f.startswith('.') and f not in SKIP_DIRS
         ]
     except Exception:
         pass
 
-    for root, dirs, files in os.walk(WORKSPACE_DIR):
+    for root, dirs, files in os.walk(get_workspace_dir()):
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith('.')]
         file_count += len([f for f in files if not f.startswith('.')])
         for f in files:
@@ -278,7 +298,7 @@ async def get_codebase_summary() -> str:
             elif f.endswith(".jsx"): tech.add("React")
 
     lines = [
-        f"Workspace: {WORKSPACE_DIR}",
+        f"Workspace: {get_workspace_dir()}",
         f"Files: {file_count}",
         f"Tech stack: {', '.join(sorted(tech)) or 'unknown'}",
         f"Top-level: {', '.join(top_level[:20])}",
@@ -286,7 +306,7 @@ async def get_codebase_summary() -> str:
 
     # README summary
     for readme in ["README.md", "readme.md", "README.txt"]:
-        rpath = os.path.join(WORKSPACE_DIR, readme)
+        rpath = os.path.join(get_workspace_dir(), readme)
         if os.path.isfile(rpath):
             try:
                 with open(rpath, "r", encoding="utf-8", errors="replace") as f:
@@ -415,11 +435,13 @@ TOOL_SCHEMAS = [
 ]
 
 
-async def execute_tool(name: str, arguments: dict) -> str:
+async def execute_tool(name: str, arguments: dict, workspace_dir: str | None = None) -> str:
     executor = TOOL_EXECUTORS.get(name)
     if not executor:
         return f"Unknown tool: {name}"
     try:
+        if workspace_dir:
+            set_workspace_dir(workspace_dir)
         return await executor(**arguments)
     except Exception as e:
         return f"Tool error ({name}): {e}"

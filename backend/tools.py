@@ -7,9 +7,21 @@ import os
 import json
 import asyncio
 import shutil
+import contextvars
 from pathlib import Path
 
 from config import WORKSPACE_DIR
+
+DANGEROUS_PATTERNS = ("rm -rf /", "del /f /s /q", "format ", "mkfs", ":(){:|:&};:", "shutdown", "reboot")
+_workspace_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("workspace_dir_legacy", default=None)
+
+
+def set_workspace_dir(workspace_dir: str):
+    _workspace_var.set(workspace_dir)
+
+
+def get_workspace_dir() -> str:
+    return _workspace_var.get() or WORKSPACE_DIR
 
 
 def _safe_path(path: str) -> str:
@@ -18,10 +30,14 @@ def _safe_path(path: str) -> str:
     if path.startswith("workspace/") or path.startswith("workspace\\"):
         path = path[len("workspace/"):] if path.startswith("workspace/") else path[len("workspace\\"):]
     
-    resolved = os.path.normpath(os.path.join(WORKSPACE_DIR, path))
-    if not resolved.startswith(os.path.normpath(WORKSPACE_DIR)):
+    workspace_dir = get_workspace_dir()
+    resolved = Path(workspace_dir).joinpath(path).resolve()
+    workspace = Path(workspace_dir).resolve()
+    try:
+        resolved.relative_to(workspace)
+    except ValueError:
         raise ValueError(f"Path traversal detected: {path}")
-    return resolved
+    return str(resolved)
 
 
 # ──────────────────────────── Tool Functions ────────────────────────────
@@ -52,7 +68,7 @@ async def write_file(path: str, content: str) -> str:
 
 async def list_files(path: str = "") -> str:
     """List files and directories recursively."""
-    safe = _safe_path(path) if path else WORKSPACE_DIR
+    safe = _safe_path(path) if path else get_workspace_dir()
     if not os.path.isdir(safe):
         return f"Error: Directory not found: {path}"
     
@@ -62,7 +78,7 @@ async def list_files(path: str = "") -> str:
         dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ('node_modules', '__pycache__', '.git', 'venv')]
         level = root.replace(safe, '').count(os.sep)
         indent = '  ' * level
-        rel = os.path.relpath(root, WORKSPACE_DIR)
+        rel = os.path.relpath(root, get_workspace_dir())
         if rel == '.':
             rel = 'workspace/'
         else:
@@ -77,12 +93,15 @@ async def list_files(path: str = "") -> str:
 
 async def run_command(command: str) -> str:
     """Run a shell command in the workspace directory."""
+    lowered = command.lower()
+    if any(p in lowered for p in DANGEROUS_PATTERNS):
+        return "Error: Command blocked for safety."
     try:
         proc = await asyncio.create_subprocess_shell(
             command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            cwd=WORKSPACE_DIR
+            cwd=get_workspace_dir()
         )
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
@@ -102,7 +121,7 @@ async def run_command(command: str) -> str:
 
 async def search_code(query: str, path: str = "") -> str:
     """Search for a string pattern in files (grep-style)."""
-    safe = _safe_path(path) if path else WORKSPACE_DIR
+    safe = _safe_path(path) if path else get_workspace_dir()
     if not os.path.isdir(safe):
         return f"Error: Directory not found: {path}"
     
@@ -121,7 +140,7 @@ async def search_code(query: str, path: str = "") -> str:
                 with open(fpath, "r", encoding="utf-8", errors="strict") as f:
                     for line_no, line in enumerate(f, 1):
                         if query.lower() in line.lower():
-                            rel = os.path.relpath(fpath, WORKSPACE_DIR)
+                            rel = os.path.relpath(fpath, get_workspace_dir())
                             results.append(f"{rel}:{line_no}: {line.rstrip()}")
                             count += 1
                             if count >= max_results:
@@ -310,12 +329,14 @@ TOOL_SCHEMAS = [
 ]
 
 
-async def execute_tool(name: str, arguments: dict) -> str:
+async def execute_tool(name: str, arguments: dict, workspace_dir: str | None = None) -> str:
     """Execute a tool by name with given arguments."""
     executor = TOOL_EXECUTORS.get(name)
     if not executor:
         return f"Unknown tool: {name}"
     try:
+        if workspace_dir:
+            set_workspace_dir(workspace_dir)
         result = await executor(**arguments)
         return result
     except Exception as e:

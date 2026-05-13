@@ -25,7 +25,7 @@ ALLOWED_TEXT_EXTS = {
 ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}
 
 
-async def process_upload(file: UploadFile, session_id: str) -> dict:
+async def process_upload(file: UploadFile, session_id: str, workspace_dir: str | None = None, user_id: str | None = None) -> dict:
     """Process an uploaded file. Returns metadata + content."""
     content = await file.read()
     size = len(content)
@@ -38,7 +38,10 @@ async def process_upload(file: UploadFile, session_id: str) -> dict:
     file_id = str(uuid.uuid4())[:8]
 
     # Save to temp dir
-    session_dir = os.path.join(UPLOAD_DIR, session_id)
+    base_dir = os.path.join(workspace_dir, ".coide_uploads") if workspace_dir else UPLOAD_DIR
+    if user_id:
+        base_dir = os.path.join(base_dir, user_id)
+    session_dir = os.path.join(base_dir, session_id)
     os.makedirs(session_dir, exist_ok=True)
     save_path = os.path.join(session_dir, f"{file_id}_{filename}")
     with open(save_path, "wb") as f:

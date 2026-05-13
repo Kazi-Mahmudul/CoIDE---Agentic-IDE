@@ -1,8 +1,7 @@
 import React, { useState } from 'react'
 import { Check, X, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react'
 import { toast } from 'react-hot-toast'
-
-const BASE = 'http://localhost:8000'
+import { writeFile } from '../../api.js'
 
 function computeDiff(oldText, newText) {
   const oldLines = (oldText || '').split('\n')
@@ -49,12 +48,7 @@ export default function DiffBlock({ path, oldContent, newContent, onOpenFile, on
     if (!path || !newContent) return
     setApplying(true)
     try {
-      const res = await fetch(`${BASE}/files/write`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path, content: newContent }),
-      })
-      if (!res.ok) throw new Error(await res.text())
+      await writeFile(path, newContent)
       setApplied(true)
       toast.success(`Applied changes to ${filename}`)
       onApplied?.(path, newContent)

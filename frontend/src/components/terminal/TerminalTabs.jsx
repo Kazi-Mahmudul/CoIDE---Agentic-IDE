@@ -15,14 +15,14 @@ function TabContextMenu({ x, y, tabId, tabs, onClose, onCloseTab, onCloseOthers,
   return (
     <div
       ref={ref}
-      className="fixed z-50 bg-[#2d2d2d] border border-[#555] rounded-lg shadow-xl py-1 min-w-[160px] text-xs"
-      style={{ left: x, top: y }}
+      className="fixed z-50 rounded-lg shadow-xl py-1 min-w-[160px] text-xs"
+      style={{ left: x, top: y, background: 'var(--bg-panel)', border: '1px solid var(--border-light)' }}
     >
-      <button onClick={() => { onCloseTab(tabId); onClose() }} className="w-full text-left px-3 py-1.5 text-[#d4d4d4] hover:bg-[#094771]">Close</button>
-      <button onClick={() => { onCloseOthers(tabId); onClose() }} className="w-full text-left px-3 py-1.5 text-[#d4d4d4] hover:bg-[#094771]">Close Others</button>
-      <button onClick={() => { onCloseAll(); onClose() }} className="w-full text-left px-3 py-1.5 text-[#d4d4d4] hover:bg-[#094771]">Close All</button>
-      <div className="border-t border-[#444] my-1" />
-      <button onClick={() => { onDuplicate(tabId); onClose() }} className="w-full text-left px-3 py-1.5 text-[#d4d4d4] hover:bg-[#094771]">Duplicate</button>
+      <button onClick={() => { onCloseTab(tabId); onClose() }} className="w-full text-left px-3 py-1.5 transition-colors" style={{ color: 'var(--text-primary)' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-selected)' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>Close</button>
+      <button onClick={() => { onCloseOthers(tabId); onClose() }} className="w-full text-left px-3 py-1.5 transition-colors" style={{ color: 'var(--text-primary)' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-selected)' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>Close Others</button>
+      <button onClick={() => { onCloseAll(); onClose() }} className="w-full text-left px-3 py-1.5 transition-colors" style={{ color: 'var(--text-primary)' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-selected)' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>Close All</button>
+      <div className="my-1" style={{ borderTop: '1px solid var(--border)' }} />
+      <button onClick={() => { onDuplicate(tabId); onClose() }} className="w-full text-left px-3 py-1.5 transition-colors" style={{ color: 'var(--text-primary)' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-selected)' }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>Duplicate</button>
     </div>
   )
 }
@@ -98,7 +98,7 @@ export default function TerminalTabs({
   const overflowTabs = orderedTabs.slice(8)
 
   return (
-    <div className="flex items-center bg-[#1a1a1a] border-b border-[#333] h-9 flex-shrink-0 overflow-hidden">
+    <div className="flex items-center h-9 flex-shrink-0 overflow-hidden" style={{ background: 'var(--bg-panel)', borderBottom: '1px solid var(--border)' }}>
       <div className="flex items-end h-full overflow-x-auto flex-1 min-w-0 scrollbar-none">
         {visibleTabs.map(tab => (
           <div
@@ -113,12 +113,30 @@ export default function TerminalTabs({
             onDoubleClick={() => handleDblClick(tab)}
             className={`
               flex items-center gap-1.5 px-3 h-full text-xs cursor-pointer select-none flex-shrink-0
-              border-r border-[#333] transition-colors relative
+              transition-colors relative
               ${tab.id === activeTabId
-                ? 'bg-[#0d0d0d] text-[#d4d4d4] border-b-2 border-b-[#007acc]'
-                : 'bg-[#1a1a1a] text-[#858585] hover:bg-[#252525] hover:text-[#d4d4d4]'}
-              ${dragOver === tab.id ? 'bg-[#094771]' : ''}
+                ? ''
+                : ''}
+              ${dragOver === tab.id ? '' : ''}
             `}
+            style={{
+              borderRight: '1px solid var(--border)',
+              background: tab.id === activeTabId ? 'var(--bg-editor)' : 'var(--bg-panel)',
+              color: tab.id === activeTabId ? 'var(--text-bright)' : 'var(--text-secondary)',
+              borderBottom: tab.id === activeTabId ? '2px solid var(--accent)' : '2px solid transparent',
+            }}
+            onMouseEnter={(e) => {
+              if (tab.id !== activeTabId) {
+                e.currentTarget.style.background = 'var(--bg-hover)'
+                e.currentTarget.style.color = 'var(--text-bright)'
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (tab.id !== activeTabId) {
+                e.currentTarget.style.background = 'var(--bg-panel)'
+                e.currentTarget.style.color = 'var(--text-secondary)'
+              }
+            }}
           >
             {tab.hasActivity && tab.id !== activeTabId && (
               <span className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0" />
@@ -130,7 +148,8 @@ export default function TerminalTabs({
                 onChange={e => setEditValue(e.target.value)}
                 onBlur={commitRename}
                 onKeyDown={e => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setEditingId(null) }}
-                className="bg-transparent border-b border-[#007acc] outline-none w-20 text-xs text-[#d4d4d4]"
+                className="bg-transparent outline-none w-20 text-xs"
+                style={{ borderBottom: '1px solid var(--accent)', color: 'var(--text-bright)' }}
                 onClick={e => e.stopPropagation()}
               />
             ) : (
@@ -139,7 +158,10 @@ export default function TerminalTabs({
             {tabs.length > 1 && (
               <button
                 onClick={e => { e.stopPropagation(); onClose(tab.id) }}
-                className="ml-1 w-4 h-4 flex items-center justify-center rounded hover:bg-[#555] text-[#555] hover:text-[#d4d4d4] flex-shrink-0"
+                className="ml-1 w-4 h-4 flex items-center justify-center rounded transition-colors flex-shrink-0"
+                style={{ color: 'var(--text-muted)' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-bright)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)' }}
               >✕</button>
             )}
           </div>
@@ -150,7 +172,10 @@ export default function TerminalTabs({
       <button
         onClick={onAdd}
         disabled={tabs.length >= 8}
-        className="flex-shrink-0 w-9 h-full flex items-center justify-center text-[#858585] hover:text-[#d4d4d4] hover:bg-[#252525] disabled:opacity-30 transition-colors"
+        className="flex-shrink-0 w-9 h-full flex items-center justify-center disabled:opacity-30 transition-colors"
+        style={{ color: 'var(--text-secondary)' }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-bright)' }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-secondary)' }}
         title="New tab (Ctrl+Shift+T)"
       >
         <Plus size={14} />

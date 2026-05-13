@@ -1,3 +1,5 @@
+import { writeExternalFile, writeFile } from '../../api.js'
+
 // All menu definitions — every action is implemented.
 
 export function buildMenus({ store, editorRef, openCommandPalette, toast, onOpenThemePicker, onSaveAll, onOpenFile }) {
@@ -22,10 +24,10 @@ export function buildMenus({ store, editorRef, openCommandPalette, toast, onOpen
           if (!f) return
           const name = prompt('Save as:', f.path)
           if (!name) return
-          fetch('http://localhost:8000/files/write', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path: name, content: f.content || '' }),
-          }).then(() => toast.success(`Saved as ${name}`)).catch(e => toast.error(e.message))
+          const save = f.externalRoot
+            ? writeExternalFile(f.externalRoot, name, f.content || '')
+            : writeFile(name, f.content || '')
+          save.then(() => toast.success(`Saved as ${name}`)).catch(e => toast.error(e.message))
         }},
         { label: 'Save All',        shortcut: 'Ctrl+K S',       action: () => openCommandPalette('save-all') },
         { separator: true },

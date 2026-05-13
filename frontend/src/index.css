@@ -27,6 +27,14 @@
   --statusbar-bg:    #007acc;
   --statusbar-text:  #ffffff;
   --scrollbar:       #424242;
+  --bg-overlay:      rgba(0, 0, 0, 0.48);
+  --bg-elevated:     #1a1a1a;
+  --text-on-accent:  #ffffff;
+  --text-danger:     #ff6b6b;
+  --text-success:    #6ecf8e;
+  --text-warning:    #e8c07d;
+  --text-info:       #7fb3ff;
+  --border-focus:    #4fa3ff;
 }
 
 * { box-sizing: border-box; }
@@ -162,4 +170,14 @@ html, body, #root {
 }
 .ide-btn-accent:hover {
   background: var(--accent-hover);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+input:focus, textarea:focus, select:focus, button:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
 }

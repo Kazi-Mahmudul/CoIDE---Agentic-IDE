@@ -8,12 +8,13 @@ import json
 import os
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 
 from .agent import run_agent
 from .memory import restore_checkpoint, get_checkpoint
 from .uploads import process_upload
+from auth import UserContext, get_current_user, get_workspace_dir
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -22,16 +23,17 @@ _abort_events: dict[str, asyncio.Event] = {}
 
 
 @router.post("/message")
-async def chat_message(request: Request):
+async def chat_message(request: Request, user: UserContext = Depends(get_current_user)):
     """
     Main chat endpoint. Returns NDJSON stream.
     Each line is a JSON object with a 'type' field.
     """
     body = await request.json()
 
-    thread_id = body.get("thread_id", "default")
+    thread_id = f"{user.user_id}:{body.get('thread_id', 'default')}"
     messages = body.get("messages", [])
     context = body.get("context", {})
+    context["user_id"] = user.user_id
     model_config = body.get("model_config", {})
     mode = body.get("mode", "auto")
     settings = body.get("settings", {})
@@ -51,6 +53,7 @@ async def chat_message(request: Request):
                 mode=mode,
                 settings=settings,
                 abort_event=abort_event,
+                workspace_dir=workspace_dir,
             ):
                 if abort_event.is_set():
                     break
@@ -72,8 +75,9 @@ async def chat_message(request: Request):
 
 
 @router.post("/abort/{thread_id}")
-async def abort_chat(thread_id: str):
+async def abort_chat(thread_id: str, user: UserContext = Depends(get_current_user)):
     """Cancel an in-progress chat stream."""
+    thread_id = f"{user.user_id}:{thread_id}"
     if thread_id in _abort_events:
         _abort_events[thread_id].set()
         return {"status": "aborted"}
@@ -84,25 +88,27 @@ async def abort_chat(thread_id: str):
 async def upload_files(
     request: Request,
     files: list[UploadFile] = File(...),
+    user: UserContext = Depends(get_current_user),
 ):
     """Upload files for chat context."""
     session_id = request.headers.get("X-Session-Id", "default")
+    workspace_dir = get_workspace_dir(user)
     if len(files) > 10:
         raise HTTPException(status_code=400, detail="Max 10 files per upload")
 
     results = []
     for file in files:
-        result = await process_upload(file, session_id)
+        result = await process_upload(file, session_id, workspace_dir=workspace_dir, user_id=user.user_id)
         results.append(result)
 
     return {"files": results}
 
 
 @router.post("/checkpoint/{checkpoint_id}/restore")
-async def restore_checkpoint_endpoint(checkpoint_id: str):
+async def restore_checkpoint_endpoint(checkpoint_id: str, user: UserContext = Depends(get_current_user)):
     """Restore files to pre-agent state."""
     try:
-        restored = restore_checkpoint(checkpoint_id)
+        restored = restore_checkpoint(checkpoint_id, user.user_id, get_workspace_dir(user))
         return {"status": "ok", "restored_files": restored}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -111,9 +117,9 @@ async def restore_checkpoint_endpoint(checkpoint_id: str):
 
 
 @router.get("/checkpoint/{checkpoint_id}")
-async def get_checkpoint_info(checkpoint_id: str):
+async def get_checkpoint_info(checkpoint_id: str, user: UserContext = Depends(get_current_user)):
     """Get checkpoint metadata."""
-    cp = get_checkpoint(checkpoint_id)
+    cp = get_checkpoint(checkpoint_id, user.user_id)
     if not cp:
         raise HTTPException(status_code=404, detail="Checkpoint not found")
     return {
@@ -121,3 +127,4 @@ async def get_checkpoint_info(checkpoint_id: str):
         "timestamp": cp["timestamp"],
         "files": list(cp["files"].keys()),
     }
+    workspace_dir = get_workspace_dir(user)

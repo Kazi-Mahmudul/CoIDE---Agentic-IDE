@@ -30,7 +30,7 @@ function fileIconColor(name) {
 }
 
 // Context menu
-function ContextMenu({ x, y, node, externalRoot, onClose, onRefresh, onFileOpen }) {
+function ContextMenu({ x, y, node, externalRoot, onClose, onRefresh, onFileOpen, onRequestInput }) {
   const ref = useRef(null)
   useEffect(() => {
     const h = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose() }
@@ -53,7 +53,14 @@ function ContextMenu({ x, y, node, externalRoot, onClose, onRefresh, onFileOpen 
 
   const doRename = async () => {
     onClose()
-    const newName = prompt('New name:', node.name)
+    const newName = onRequestInput
+      ? await onRequestInput({
+      title: `Rename ${node.name}`,
+      placeholder: 'New name',
+      initialValue: node.name,
+      submitLabel: 'Rename',
+    })
+      : prompt('New name:', node.name)
     if (!newName || newName === node.name) return
     const parts = node.path.split('/')
     parts[parts.length - 1] = newName
@@ -68,7 +75,13 @@ function ContextMenu({ x, y, node, externalRoot, onClose, onRefresh, onFileOpen 
 
   const doNewFile = async () => {
     onClose()
-    const name = prompt('New file name:')
+    const name = onRequestInput
+      ? await onRequestInput({
+      title: `Create File In ${node.name}`,
+      placeholder: 'e.g. app.py',
+      submitLabel: 'Create File',
+    })
+      : prompt('New file name:')
     if (!name) return
     const dir = node.type === 'directory' ? node.path : node.path.split('/').slice(0, -1).join('/')
     const newPath = dir ? `${dir}/${name}` : name
@@ -89,7 +102,13 @@ function ContextMenu({ x, y, node, externalRoot, onClose, onRefresh, onFileOpen 
 
   const doNewFolder = async () => {
     onClose()
-    const name = prompt('New folder name:')
+    const name = onRequestInput
+      ? await onRequestInput({
+      title: `Create Folder In ${node.name}`,
+      placeholder: 'e.g. components',
+      submitLabel: 'Create Folder',
+    })
+      : prompt('New folder name:')
     if (!name) return
     const dir = node.type === 'directory' ? node.path : node.path.split('/').slice(0, -1).join('/')
     const newPath = dir ? `${dir}/${name}` : name
@@ -124,7 +143,7 @@ function ContextMenu({ x, y, node, externalRoot, onClose, onRefresh, onFileOpen 
 }
 
 // Single tree node
-function TreeNode({ node, depth, activeFile, externalRoot, onFileOpen, onRefresh }) {
+function TreeNode({ node, depth, activeFile, externalRoot, onFileOpen, onRefresh, onRequestInput }) {
   const [expanded, setExpanded] = useState(depth < 2)
   const [contextMenu, setContextMenu] = useState(null)
 
@@ -182,7 +201,7 @@ function TreeNode({ node, depth, activeFile, externalRoot, onFileOpen, onRefresh
 
       {contextMenu && (
         <ContextMenu x={contextMenu.x} y={contextMenu.y} node={node} externalRoot={externalRoot}
-          onClose={() => setContextMenu(null)} onRefresh={onRefresh} onFileOpen={onFileOpen} />
+          onClose={() => setContextMenu(null)} onRefresh={onRefresh} onFileOpen={onFileOpen} onRequestInput={onRequestInput} />
       )}
 
       {node.type === 'directory' && expanded && node.children?.length > 0 && (
@@ -190,7 +209,7 @@ function TreeNode({ node, depth, activeFile, externalRoot, onFileOpen, onRefresh
           {node.children.map(child => (
             <TreeNode key={child.path} node={child} depth={depth + 1}
               activeFile={activeFile} externalRoot={externalRoot}
-              onFileOpen={onFileOpen} onRefresh={onRefresh} />
+              onFileOpen={onFileOpen} onRefresh={onRefresh} onRequestInput={onRequestInput} />
           ))}
         </div>
       )}
@@ -199,9 +218,15 @@ function TreeNode({ node, depth, activeFile, externalRoot, onFileOpen, onRefresh
 }
 
 // Root FileTree
-export default function FileTree({ tree, activeFile, externalRoot, rootLabel, onFileOpen, onRefresh, onOpenFolder }) {
+export default function FileTree({ tree, activeFile, externalRoot, rootLabel, onFileOpen, onRefresh, onOpenFolder, onRequestInput }) {
   const handleNewRootFile = async () => {
-    const name = prompt('New file name:')
+    const name = onRequestInput
+      ? await onRequestInput({
+      title: 'Create New File',
+      placeholder: 'e.g. src/main.py',
+      submitLabel: 'Create File',
+    })
+      : prompt('New file name:')
     if (!name) return
     try {
       if (externalRoot) {
@@ -219,7 +244,13 @@ export default function FileTree({ tree, activeFile, externalRoot, rootLabel, on
   }
 
   const handleNewRootFolder = async () => {
-    const name = prompt('New folder name:')
+    const name = onRequestInput
+      ? await onRequestInput({
+      title: 'Create New Folder',
+      placeholder: 'e.g. src/components',
+      submitLabel: 'Create Folder',
+    })
+      : prompt('New folder name:')
     if (!name) return
     try {
       if (externalRoot) await createExternalFile(externalRoot, name, true)
@@ -280,7 +311,7 @@ export default function FileTree({ tree, activeFile, externalRoot, rootLabel, on
         tree.map(node => (
           <TreeNode key={node.path} node={node} depth={0}
             activeFile={activeFile} externalRoot={externalRoot}
-            onFileOpen={onFileOpen} onRefresh={onRefresh} />
+            onFileOpen={onFileOpen} onRefresh={onRefresh} onRequestInput={onRequestInput} />
         ))
       )}
     </div>

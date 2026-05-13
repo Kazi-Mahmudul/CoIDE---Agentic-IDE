@@ -18,24 +18,36 @@ export default function ProblemsPanel({ markers = [], onGoToLine }) {
       <div className="flex items-center gap-2 px-3 py-1 border-b border-[#333] flex-shrink-0">
         <button
           onClick={() => setFilter('all')}
-          className={`text-[11px] px-2 py-0.5 rounded ${filter === 'all' ? 'bg-[#3a3a3a] text-[#d4d4d4]' : 'text-[#858585] hover:text-[#d4d4d4]'}`}
+          className="text-[11px] px-2 py-0.5 rounded transition-colors"
+          style={{
+            background: filter === 'all' ? 'var(--bg-selected)' : 'transparent',
+            color: filter === 'all' ? 'var(--text-bright)' : 'var(--text-secondary)',
+          }}
         >All</button>
         <button
           onClick={() => setFilter('errors')}
-          className={`flex items-center gap-1 text-[11px] px-2 py-0.5 rounded ${filter === 'errors' ? 'bg-[#3a3a3a] text-[#d4d4d4]' : 'text-[#858585] hover:text-[#d4d4d4]'}`}
+          className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded transition-colors"
+          style={{
+            background: filter === 'errors' ? 'var(--bg-selected)' : 'transparent',
+            color: filter === 'errors' ? 'var(--text-bright)' : 'var(--text-secondary)',
+          }}
         >
           <AlertCircle size={11} className="text-red-400" /> {errors}
         </button>
         <button
           onClick={() => setFilter('warnings')}
-          className={`flex items-center gap-1 text-[11px] px-2 py-0.5 rounded ${filter === 'warnings' ? 'bg-[#3a3a3a] text-[#d4d4d4]' : 'text-[#858585] hover:text-[#d4d4d4]'}`}
+          className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded transition-colors"
+          style={{
+            background: filter === 'warnings' ? 'var(--bg-selected)' : 'transparent',
+            color: filter === 'warnings' ? 'var(--text-bright)' : 'var(--text-secondary)',
+          }}
         >
           <AlertTriangle size={11} className="text-yellow-400" /> {warnings}
         </button>
       </div>
       <div className="flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-xs text-[#555]">
+          <div className="flex items-center justify-center h-full text-xs" style={{ color: 'var(--text-muted)' }}>
             No problems detected
           </div>
         ) : (
@@ -43,7 +55,9 @@ export default function ProblemsPanel({ markers = [], onGoToLine }) {
             <button
               key={i}
               onClick={() => onGoToLine?.(m.resource?.path, m.startLineNumber)}
-              className="w-full flex items-start gap-2 px-3 py-1.5 text-xs text-left hover:bg-[#2a2d2e]"
+              className="w-full flex items-start gap-2 px-3 py-1.5 text-xs text-left transition-colors"
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
             >
               {m.severity === 8
                 ? <AlertCircle size={13} className="text-red-400 flex-shrink-0 mt-0.5" />
@@ -52,8 +66,8 @@ export default function ProblemsPanel({ markers = [], onGoToLine }) {
                   : <Info size={13} className="text-blue-400 flex-shrink-0 mt-0.5" />
               }
               <div className="flex-1 min-w-0">
-                <div className="text-[#cccccc] truncate">{m.message}</div>
-                <div className="text-[#858585] text-[10px]">
+                <div className="truncate" style={{ color: 'var(--text-primary)' }}>{m.message}</div>
+                <div className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>
                   {m.resource?.path?.split('/').pop()} Ln {m.startLineNumber}, Col {m.startColumn}
                 </div>
               </div>

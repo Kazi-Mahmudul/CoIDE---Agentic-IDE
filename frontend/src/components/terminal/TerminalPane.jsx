@@ -61,7 +61,7 @@ export default function TerminalPane({ instance, active, onRef }) {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="relative h-full w-full bg-[#0d0d0d]">
+    <div className="relative h-full w-full" style={{ background: 'var(--bg-editor)' }}>
       {/* xterm mounts here imperatively */}
       <div
         ref={slotRef}
@@ -72,14 +72,15 @@ export default function TerminalPane({ instance, active, onRef }) {
 
       {/* Disconnected overlay */}
       {status === 'disconnected' && (
-        <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-20 backdrop-blur-sm">
-          <div className="text-[#858585] text-sm mb-3 flex items-center gap-2">
-            <span className="inline-block w-4 h-4 border-2 border-[#858585] border-t-transparent rounded-full animate-spin" />
+        <div className="absolute inset-0 flex flex-col items-center justify-center z-20 backdrop-blur-sm" style={{ background: 'var(--bg-overlay)' }}>
+          <div className="text-sm mb-3 flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
+            <span className="inline-block w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--text-secondary)' }} />
             Reconnecting…
           </div>
           <button
             onClick={() => instance?._connect()}
-            className="px-3 py-1.5 text-xs bg-[#007acc] hover:bg-[#0098ff] text-white rounded transition-colors"
+            className="px-3 py-1.5 text-xs rounded transition-colors"
+            style={{ background: 'var(--accent)', color: 'var(--text-on-accent)' }}
           >
             Reconnect now
           </button>

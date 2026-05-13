@@ -10,7 +10,17 @@ import { registerCommands } from './components/CommandPalette/commands.js'
 import { buildMenus } from './components/MenuBar/menus.js'
 import { useKeyboard } from './hooks/useKeyboard.js'
 import { useFileTree } from './hooks/useFileTree.js'
-import { readFile, readExternalFile, writeFile, writeExternalFile, createFile, createExternalFile } from './api.js'
+import {
+  readFile,
+  readExternalFile,
+  writeFile,
+  writeExternalFile,
+  createFile,
+  createExternalFile,
+  getAuthToken,
+  getCurrentUser,
+  setAuthToken,
+} from './api.js'
 import { applyTheme, THEMES } from './themes.js'
 
 import MenuBar from './components/MenuBar/MenuBar.jsx'
@@ -25,9 +35,8 @@ import ChatPanel from './components/ChatPanel/ChatPanel.jsx'
 import ConfigModal from './components/ConfigModal.jsx'
 import FolderPicker from './components/FolderPicker.jsx'
 import ThemePicker from './components/ThemePicker.jsx'
-
-// Counter for untitled files
-let untitledCounter = 1
+import AuthModal from './components/AuthModal.jsx'
+import QuickInputModal from './components/QuickInputModal.jsx'
 
 export default function App() {
   const store = useIDEStore()
@@ -43,8 +52,35 @@ export default function App() {
   const [folderPickerOpen, setFolderPickerOpen] = useState(false)
   const [themePickerOpen, setThemePickerOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [authReady, setAuthReady] = useState(false)
+  const [authOpen, setAuthOpen] = useState(false)
+  const [quickInput, setQuickInput] = useState({ open: false, title: '', placeholder: '', value: '', submitLabel: 'Create' })
   const [cursorPosition, setCursorPosition] = useState(null)
   const [markers, setMarkers] = useState([])
+  const quickInputResolverRef = useRef(null)
+
+  const requestInput = useCallback(({ title, placeholder = '', initialValue = '', submitLabel = 'Create' }) => {
+    return new Promise((resolve) => {
+      quickInputResolverRef.current = resolve
+      setQuickInput({ open: true, title, placeholder, value: initialValue, submitLabel })
+    })
+  }, [])
+
+  const closeQuickInput = useCallback(() => {
+    setQuickInput((prev) => ({ ...prev, open: false }))
+    if (quickInputResolverRef.current) {
+      quickInputResolverRef.current(null)
+      quickInputResolverRef.current = null
+    }
+  }, [])
+
+  const submitQuickInput = useCallback((value) => {
+    setQuickInput((prev) => ({ ...prev, open: false }))
+    if (quickInputResolverRef.current) {
+      quickInputResolverRef.current(value)
+      quickInputResolverRef.current = null
+    }
+  }, [])
 
   // File tree
   const { tree, refresh, rootPath } = useFileTree(externalRoot)
@@ -72,6 +108,26 @@ export default function App() {
   // ── Show config modal on first load ─────────────────────────────────────
   useEffect(() => {
     if (!localStorage.getItem('modelConfig')) setConfigOpen(true)
+  }, [])
+
+  useEffect(() => {
+    const token = getAuthToken()
+    if (!token) {
+      setAuthOpen(true)
+      setAuthReady(true)
+      return
+    }
+    getCurrentUser()
+      .then((u) => {
+        localStorage.setItem('coide_user', JSON.stringify(u))
+        setAuthOpen(false)
+      })
+      .catch(() => {
+        setAuthToken('')
+        localStorage.removeItem('coide_user')
+        setAuthOpen(true)
+      })
+      .finally(() => setAuthReady(true))
   }, [])
 
   // ── Apply theme to document ─────────────────────────────────────────────
@@ -130,24 +186,18 @@ export default function App() {
 
   // ── New file — prompts for name and creates in workspace ───────────────
   const handleNewFile = useCallback(async (suggestedName) => {
-    const name = suggestedName || prompt('New file name (e.g. main.py):')
+    const name = suggestedName || await requestInput({
+      title: 'Create New File',
+      placeholder: 'e.g. src/main.py',
+      submitLabel: 'Create File',
+    })
     if (!name?.trim()) return
     const filename = name.trim()
     try {
       if (externalRoot) {
-        // External folder mode: create via external file API
-        await fetch('http://localhost:8000/files/external/create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ root: externalRoot, path: filename, is_dir: false }),
-        })
+        await createExternalFile(externalRoot, filename, false)
       } else {
-        // Workspace mode
-        await fetch('http://localhost:8000/files/create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: filename, is_dir: false }),
-        })
+        await createFile(filename, false)
       }
       openFile({
         id: externalRoot ? `${externalRoot}/${filename}` : filename,
@@ -163,7 +213,7 @@ export default function App() {
     } catch (e) {
       toast.error(`Create failed: ${e.message}`)
     }
-  }, [openFile, refresh, externalRoot])
+  }, [openFile, refresh, externalRoot, requestInput])
 
   // ── Save All open files ─────────────────────────────────────────────────
   const handleSaveAll = useCallback(async () => {
@@ -299,7 +349,24 @@ export default function App() {
 
       {/* Modals */}
       <ConfigModal open={configOpen} onClose={() => setConfigOpen(false)} />
+      <AuthModal
+        open={authOpen}
+        onAuthenticated={() => {
+          setAuthOpen(false)
+          refresh()
+          toast.success('Workspace unlocked')
+        }}
+      />
       <ThemePicker open={themePickerOpen} onClose={() => setThemePickerOpen(false)} />
+      <QuickInputModal
+        open={quickInput.open}
+        title={quickInput.title}
+        placeholder={quickInput.placeholder}
+        initialValue={quickInput.value}
+        submitLabel={quickInput.submitLabel}
+        onSubmit={submitQuickInput}
+        onClose={closeQuickInput}
+      />
       <FolderPicker
         open={folderPickerOpen}
         onClose={() => setFolderPickerOpen(false)}
@@ -310,6 +377,10 @@ export default function App() {
         workspaceFiles={allWorkspaceFiles()}
         onOpenFile={handleFileOpen}
       />
+
+      {!authReady && (
+        <div className="fixed inset-0 z-[110]" style={{ background: 'var(--bg-overlay)' }} />
+      )}
 
       {/* Keyboard Shortcuts Modal */}
       {shortcutsOpen && (
@@ -375,6 +446,7 @@ export default function App() {
           onFileOpen={handleFileOpen}
           onRefresh={refresh}
           onOpenFolder={() => setFolderPickerOpen(true)}
+          onRequestInput={requestInput}
         />
 
         {/* Center: Editor + Bottom panel */}

@@ -1,8 +1,7 @@
 import React, { useState } from 'react'
 import { RotateCcw, Check, ChevronDown, ChevronRight } from 'lucide-react'
 import { toast } from 'react-hot-toast'
-
-const BASE = 'http://localhost:8000'
+import { authHeaders, BASE } from '../../api.js'
 
 export default function CheckpointBar({ checkpointId, filesChanged = [], onRestored, onOpenFile }) {
   const [restoring, setRestoring] = useState(false)
@@ -13,7 +12,7 @@ export default function CheckpointBar({ checkpointId, filesChanged = [], onResto
     if (!checkpointId) return
     setRestoring(true)
     try {
-      const res = await fetch(`${BASE}/chat/checkpoint/${checkpointId}/restore`, { method: 'POST' })
+      const res = await fetch(`${BASE}/chat/checkpoint/${checkpointId}/restore`, { method: 'POST', headers: authHeaders() })
       if (!res.ok) throw new Error(await res.text())
       const data = await res.json()
       setRestored(true)

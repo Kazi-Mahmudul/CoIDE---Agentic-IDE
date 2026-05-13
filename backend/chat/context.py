@@ -10,13 +10,11 @@ from typing import Optional
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import WORKSPACE_DIR
-
-
-def get_git_branch() -> str:
+def get_git_branch(workspace_dir: str) -> str:
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=WORKSPACE_DIR, capture_output=True, text=True, timeout=3
+            cwd=workspace_dir, capture_output=True, text=True, timeout=3
         )
         if result.returncode == 0:
             return result.stdout.strip()
@@ -32,6 +30,7 @@ def estimate_tokens(text: str) -> int:
 
 def build_system_prompt(
     mode: str,
+    workspace_dir: str = WORKSPACE_DIR,
     active_file: Optional[str] = None,
     active_file_content: Optional[str] = None,
     selection: Optional[str] = None,
@@ -42,12 +41,12 @@ def build_system_prompt(
     terminal_output: Optional[str] = None,
     max_file_lines: int = 200,
 ) -> str:
-    branch = git_branch or get_git_branch()
+    branch = git_branch or get_git_branch(workspace_dir)
 
     if mode == "chat":
         base = f"""You are an expert AI coding assistant integrated into a web IDE called Coide.
 You answer questions clearly and concisely. You have full context of the user's workspace.
-Current workspace: {WORKSPACE_DIR}
+Current workspace: {workspace_dir}
 Git branch: {branch}"""
     else:
         base = f"""You are an expert AI coding assistant integrated into a web IDE called Coide.
@@ -61,7 +60,7 @@ Always think step-by-step:
 4. Run tests or commands to validate changes when appropriate
 5. Be concise in explanations but thorough in implementation
 
-Current workspace: {WORKSPACE_DIR}
+Current workspace: {workspace_dir}
 Git branch: {branch}"""
 
     parts = [base]

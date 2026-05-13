@@ -3,12 +3,11 @@ import { Settings, MessageSquare } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import { v4 as uuidv4 } from 'uuid'
 import { useChatStore } from '../../store/useChatStore.js'
+import { authHeaders, BASE, writeFile } from '../../api.js'
 import ChatMessages from './ChatMessages.jsx'
 import ChatInput from './ChatInput.jsx'
 import ChatThread from './ChatThread.jsx'
 import ChatSettings from './ChatSettings.jsx'
-
-const BASE = 'http://localhost:8000'
 
 function estimateTokens(text) { return Math.ceil((text || '').length / 4) }
 
@@ -163,7 +162,7 @@ export default function ChatPanel({ activeFile, tree = [], markers = [], onFileO
     try {
       const res = await fetch(`${BASE}/chat/message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         signal: controller.signal,
         body: JSON.stringify({
           thread_id: activeThreadId,
@@ -259,11 +258,7 @@ export default function ChatPanel({ activeFile, tree = [], markers = [], onFileO
               case 'diff':
                 next.diffs = [...(next.diffs || []), { path: event.path, old: event.old, new: event.new }]
                 if (getChatSettings().auto_apply && event.path && event.new) {
-                  fetch(`${BASE}/files/write`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path: event.path, content: event.new }),
-                  }).then(() => onFileWrite?.(event.path)).catch(() => {})
+                  writeFile(event.path, event.new).then(() => onFileWrite?.(event.path)).catch(() => {})
                 }
                 break
               case 'suggestions':
@@ -312,7 +307,7 @@ export default function ChatPanel({ activeFile, tree = [], markers = [], onFileO
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort()
-    fetch(`${BASE}/chat/abort/${activeThreadId}`, { method: 'POST' }).catch(() => {})
+    fetch(`${BASE}/chat/abort/${activeThreadId}`, { method: 'POST', headers: authHeaders() }).catch(() => {})
   }, [activeThreadId])
 
   const handleEdit = useCallback((msg) => {

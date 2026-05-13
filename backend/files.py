@@ -9,30 +9,32 @@ The frontend switches between modes when the user opens a local folder.
 """
 
 import os
-import sys
+import re
 import shutil
-from fastapi import APIRouter, HTTPException, Query
+from pathlib import Path
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from pydantic import BaseModel
+from auth import UserContext, get_current_user, get_workspace_dir
 
 router = APIRouter(tags=["files"])
-
-# ── Default workspace (sandboxed) ────────────────────────────────────────────
-from config import WORKSPACE_DIR
 
 
 # ─────────────────────────── helpers ─────────────────────────────────────────
 
-def _safe_workspace_path(path: str) -> str:
+def _safe_workspace_path(workspace_dir: str, path: str) -> str:
     """Resolve a workspace-relative path, blocking traversal."""
     # Strip leading workspace/ prefix if present
     for prefix in ("workspace/", "workspace\\"):
         if path.startswith(prefix):
             path = path[len(prefix):]
             break
-    resolved = os.path.normpath(os.path.join(WORKSPACE_DIR, path))
-    if not resolved.startswith(WORKSPACE_DIR + os.sep) and resolved != WORKSPACE_DIR:
+    resolved = Path(workspace_dir).joinpath(path).resolve()
+    workspace = Path(workspace_dir).resolve()
+    try:
+        resolved.relative_to(workspace)
+    except ValueError:
         raise HTTPException(status_code=400, detail="Path traversal not allowed")
-    return resolved
+    return str(resolved)
 
 
 def _build_tree(dir_path: str, base: str) -> list:
@@ -65,15 +67,17 @@ def _build_tree(dir_path: str, base: str) -> list:
 # ═════════════════════════ WORKSPACE endpoints ════════════════════════════════
 
 @router.get("/files/tree")
-async def get_file_tree():
+async def get_file_tree(user: UserContext = Depends(get_current_user)):
     """Return the full file tree of workspace/ as JSON."""
-    os.makedirs(WORKSPACE_DIR, exist_ok=True)
-    return {"tree": _build_tree(WORKSPACE_DIR, WORKSPACE_DIR), "root": WORKSPACE_DIR}
+    workspace_dir = get_workspace_dir(user)
+    os.makedirs(workspace_dir, exist_ok=True)
+    return {"tree": _build_tree(workspace_dir, workspace_dir), "root": workspace_dir}
 
 
 @router.get("/files/read")
-async def read_file(path: str = Query(...)):
-    safe = _safe_workspace_path(path)
+async def read_file(path: str = Query(...), user: UserContext = Depends(get_current_user)):
+    workspace_dir = get_workspace_dir(user)
+    safe = _safe_workspace_path(workspace_dir, path)
     if not os.path.isfile(safe):
         raise HTTPException(status_code=404, detail=f"File not found: {path}")
     try:
@@ -89,8 +93,9 @@ class WriteBody(BaseModel):
 
 
 @router.post("/files/write")
-async def write_file(body: WriteBody):
-    safe = _safe_workspace_path(body.path)
+async def write_file(body: WriteBody, user: UserContext = Depends(get_current_user)):
+    workspace_dir = get_workspace_dir(user)
+    safe = _safe_workspace_path(workspace_dir, body.path)
     try:
         os.makedirs(os.path.dirname(safe), exist_ok=True)
         with open(safe, "w", encoding="utf-8") as f:
@@ -106,14 +111,15 @@ class CreateBody(BaseModel):
 
 
 @router.post("/files/create")
-async def create_file(body: CreateBody):
-    safe = _safe_workspace_path(body.path)
+async def create_file(body: CreateBody, user: UserContext = Depends(get_current_user)):
+    workspace_dir = get_workspace_dir(user)
+    safe = _safe_workspace_path(workspace_dir, body.path)
     try:
         if body.is_dir:
             os.makedirs(safe, exist_ok=True)
             return {"status": "ok", "path": body.path, "type": "directory"}
         else:
-            os.makedirs(os.path.dirname(safe) or WORKSPACE_DIR, exist_ok=True)
+            os.makedirs(os.path.dirname(safe) or workspace_dir, exist_ok=True)
             if not os.path.exists(safe):
                 open(safe, "w").close()
             return {"status": "ok", "path": body.path, "type": "file"}
@@ -122,8 +128,9 @@ async def create_file(body: CreateBody):
 
 
 @router.delete("/files/delete")
-async def delete_file(path: str = Query(...)):
-    safe = _safe_workspace_path(path)
+async def delete_file(path: str = Query(...), user: UserContext = Depends(get_current_user)):
+    workspace_dir = get_workspace_dir(user)
+    safe = _safe_workspace_path(workspace_dir, path)
     if not os.path.exists(safe):
         raise HTTPException(status_code=404, detail=f"Not found: {path}")
     try:
@@ -137,15 +144,31 @@ async def delete_file(path: str = Query(...)):
 
 
 @router.get("/files/search")
-async def search_files(q: str = Query(..., description="Search query")):
+async def search_files(
+    q: str = Query(..., description="Search query"),
+    case_sensitive: bool = Query(False),
+    whole_word: bool = Query(False),
+    use_regex: bool = Query(False),
+    user: UserContext = Depends(get_current_user),
+):
     """Full-text search across all workspace files."""
     if not q.strip():
         return {"results": []}
 
     results = []
     max_results = 100
+    pattern = None
+    flags = 0 if case_sensitive else re.IGNORECASE
+    if use_regex:
+        try:
+            expr = q if not whole_word else rf"\b(?:{q})\b"
+            pattern = re.compile(expr, flags)
+        except re.error as e:
+            raise HTTPException(status_code=400, detail=f"Invalid regex: {e}")
+    elif whole_word:
+        pattern = re.compile(rf"\b{re.escape(q)}\b", flags)
 
-    for root, dirs, files in os.walk(WORKSPACE_DIR):
+    for root, dirs, files in os.walk(workspace_dir):
         dirs[:] = [d for d in dirs if not d.startswith('.') and d not in (
             'node_modules', '__pycache__', 'venv', '.git', '.venv', 'dist', '.next', 'build'
         )]
@@ -153,11 +176,18 @@ async def search_files(q: str = Query(..., description="Search query")):
             if len(results) >= max_results:
                 break
             fpath = os.path.join(root, fname)
-            rel = os.path.relpath(fpath, WORKSPACE_DIR).replace("\\", "/")
+            rel = os.path.relpath(fpath, workspace_dir).replace("\\", "/")
             try:
                 with open(fpath, "r", encoding="utf-8", errors="strict") as f:
                     for line_no, line in enumerate(f, 1):
-                        if q.lower() in line.lower():
+                        line_match = False
+                        if pattern:
+                            line_match = pattern.search(line) is not None
+                        elif case_sensitive:
+                            line_match = q in line
+                        else:
+                            line_match = q.lower() in line.lower()
+                        if line_match:
                             results.append({
                                 "file": rel,
                                 "line": line_no,
@@ -177,17 +207,45 @@ class RenameBody(BaseModel):
 
 
 @router.post("/files/rename")
-async def rename_file(body: RenameBody):
-    old_safe = _safe_workspace_path(body.old_path)
-    new_safe = _safe_workspace_path(body.new_path)
+async def rename_file(body: RenameBody, user: UserContext = Depends(get_current_user)):
+    workspace_dir = get_workspace_dir(user)
+    old_safe = _safe_workspace_path(workspace_dir, body.old_path)
+    new_safe = _safe_workspace_path(workspace_dir, body.new_path)
     if not os.path.exists(old_safe):
         raise HTTPException(status_code=404, detail="Source not found")
     try:
-        os.makedirs(os.path.dirname(new_safe) or WORKSPACE_DIR, exist_ok=True)
+        os.makedirs(os.path.dirname(new_safe) or workspace_dir, exist_ok=True)
         shutil.move(old_safe, new_safe)
         return {"status": "ok"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/files/upload")
+async def upload_files(
+    path: str = Query("", description="Optional destination directory"),
+    files: list[UploadFile] = File(...),
+    user: UserContext = Depends(get_current_user),
+):
+    """Upload one or more files into workspace."""
+    if len(files) > 50:
+        raise HTTPException(status_code=400, detail="Too many files (max 50)")
+
+    workspace_dir = get_workspace_dir(user)
+    dest_dir = _safe_workspace_path(workspace_dir, path) if path else workspace_dir
+    os.makedirs(dest_dir, exist_ok=True)
+    uploaded = []
+    for f in files:
+        filename = os.path.basename(f.filename or "").strip()
+        if not filename:
+            continue
+        target = _safe_workspace_path(workspace_dir, os.path.join(path, filename) if path else filename)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        data = await f.read()
+        with open(target, "wb") as out:
+            out.write(data)
+        uploaded.append(os.path.relpath(target, workspace_dir).replace("\\", "/"))
+    return {"status": "ok", "files": uploaded}
 
 
 # ═════════════════════════ EXTERNAL folder endpoints ═════════════════════════
@@ -196,16 +254,21 @@ async def rename_file(body: RenameBody):
 
 def _abs(path: str) -> str:
     """Normalise an absolute path."""
-    p = os.path.normpath(path)
+    p = os.path.abspath(os.path.normpath(path))
     if not os.path.isabs(p):
         raise HTTPException(status_code=400, detail="Path must be absolute")
     return p
 
 
 @router.get("/external/tree")
-async def external_tree(root: str = Query(..., description="Absolute folder path")):
+async def external_tree(root: str = Query(..., description="Absolute folder path"), user: UserContext = Depends(get_current_user)):
     """Return file tree for any absolute folder path."""
     r = _abs(root)
+    user_root = Path(get_workspace_dir(user)).resolve()
+    try:
+        Path(r).resolve().relative_to(user_root)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="External root must stay inside your workspace")
     if not os.path.isdir(r):
         raise HTTPException(status_code=404, detail="Directory not found")
     return {"tree": _build_tree(r, r), "root": r}
@@ -215,8 +278,14 @@ async def external_tree(root: str = Query(..., description="Absolute folder path
 async def external_read(
     root: str = Query(...),
     path: str = Query(..., description="Path relative to root"),
+    user: UserContext = Depends(get_current_user),
 ):
     r = _abs(root)
+    user_root = Path(get_workspace_dir(user)).resolve()
+    try:
+        Path(r).resolve().relative_to(user_root)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="External root must stay inside your workspace")
     full = os.path.normpath(os.path.join(r, path))
     # Ensure we stay inside the opened root
     if not full.startswith(r + os.sep) and full != r:
@@ -237,8 +306,13 @@ class ExtWriteBody(BaseModel):
 
 
 @router.post("/external/write")
-async def external_write(body: ExtWriteBody):
+async def external_write(body: ExtWriteBody, user: UserContext = Depends(get_current_user)):
     r = _abs(body.root)
+    user_root = Path(get_workspace_dir(user)).resolve()
+    try:
+        Path(r).resolve().relative_to(user_root)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="External root must stay inside your workspace")
     full = os.path.normpath(os.path.join(r, body.path))
     if not full.startswith(r + os.sep) and full != r:
         raise HTTPException(status_code=400, detail="Path outside opened folder")
@@ -258,8 +332,13 @@ class ExtCreateBody(BaseModel):
 
 
 @router.post("/external/create")
-async def external_create(body: ExtCreateBody):
+async def external_create(body: ExtCreateBody, user: UserContext = Depends(get_current_user)):
     r = _abs(body.root)
+    user_root = Path(get_workspace_dir(user)).resolve()
+    try:
+        Path(r).resolve().relative_to(user_root)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="External root must stay inside your workspace")
     full = os.path.normpath(os.path.join(r, body.path))
     if not full.startswith(r + os.sep) and full != r:
         raise HTTPException(status_code=400, detail="Path outside opened folder")
@@ -276,8 +355,13 @@ async def external_create(body: ExtCreateBody):
 
 
 @router.delete("/external/delete")
-async def external_delete(root: str = Query(...), path: str = Query(...)):
+async def external_delete(root: str = Query(...), path: str = Query(...), user: UserContext = Depends(get_current_user)):
     r = _abs(root)
+    user_root = Path(get_workspace_dir(user)).resolve()
+    try:
+        Path(r).resolve().relative_to(user_root)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="External root must stay inside your workspace")
     full = os.path.normpath(os.path.join(r, path))
     if not full.startswith(r + os.sep) and full != r:
         raise HTTPException(status_code=400, detail="Path outside opened folder")
@@ -300,8 +384,13 @@ class ExtRenameBody(BaseModel):
 
 
 @router.post("/external/rename")
-async def external_rename(body: ExtRenameBody):
+async def external_rename(body: ExtRenameBody, user: UserContext = Depends(get_current_user)):
     r = _abs(body.root)
+    user_root = Path(get_workspace_dir(user)).resolve()
+    try:
+        Path(r).resolve().relative_to(user_root)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="External root must stay inside your workspace")
     old_full = os.path.normpath(os.path.join(r, body.old_path))
     new_full = os.path.normpath(os.path.join(r, body.new_path))
     for p in (old_full, new_full):
@@ -318,9 +407,14 @@ async def external_rename(body: ExtRenameBody):
 
 
 @router.get("/external/ls")
-async def external_ls(path: str = Query(..., description="Absolute path to list")):
+async def external_ls(path: str = Query(..., description="Absolute path to list"), user: UserContext = Depends(get_current_user)):
     """List immediate children of any absolute directory (for folder picker)."""
     p = _abs(path)
+    user_root = Path(get_workspace_dir(user)).resolve()
+    try:
+        Path(p).resolve().relative_to(user_root)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Path must stay inside your workspace")
     if not os.path.isdir(p):
         raise HTTPException(status_code=404, detail="Not a directory")
     try:
@@ -348,15 +442,8 @@ async def external_ls(path: str = Query(..., description="Absolute path to list"
 
 
 @router.get("/external/roots")
-async def external_roots():
-    """Return filesystem roots (drives on Windows, / on Unix)."""
-    if sys.platform == "win32":
-        import string
-        drives = []
-        for letter in string.ascii_uppercase:
-            d = f"{letter}:\\"
-            if os.path.exists(d):
-                drives.append({"name": d, "path": d.replace("\\", "/")})
-        return {"roots": drives}
-    else:
-        return {"roots": [{"name": "/", "path": "/"}]}
+async def external_roots(user: UserContext = Depends(get_current_user)):
+    """Return allowed roots for current user."""
+    user_root = get_workspace_dir(user).replace("\\", "/")
+    return {"roots": [{"name": "My Workspace", "path": user_root}]}
+    workspace_dir = get_workspace_dir(user)

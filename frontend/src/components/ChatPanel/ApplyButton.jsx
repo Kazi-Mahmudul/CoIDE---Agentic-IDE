@@ -1,8 +1,7 @@
 import React, { useState } from 'react'
 import { Check, Loader2, RotateCcw } from 'lucide-react'
 import { toast } from 'react-hot-toast'
-
-const BASE = 'http://localhost:8000'
+import { readFile, writeFile } from '../../api.js'
 
 export default function ApplyButton({ code, targetFile, activeFilePath, onApplied }) {
   const [state, setstate] = useState('idle') // idle | applying | done
@@ -16,18 +15,10 @@ export default function ApplyButton({ code, targetFile, activeFilePath, onApplie
     setstate('applying')
     try {
       // Read current content for undo
-      const readRes = await fetch(`${BASE}/files/read?path=${encodeURIComponent(filePath)}`)
-      if (readRes.ok) {
-        const data = await readRes.json()
-        setPrevContent(data.content)
-      }
+      const data = await readFile(filePath)
+      setPrevContent(data.content)
       // Write new content
-      const res = await fetch(`${BASE}/files/write`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: filePath, content: code }),
-      })
-      if (!res.ok) throw new Error(await res.text())
+      await writeFile(filePath, code)
       setstate('done')
       toast.success(`Applied to ${filePath.split('/').pop()}`)
       onApplied?.(filePath, code)
@@ -44,11 +35,7 @@ export default function ApplyButton({ code, targetFile, activeFilePath, onApplie
     if (!prevContent) return
     clearTimeout(undoTimer)
     try {
-      await fetch(`${BASE}/files/write`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: filePath, content: prevContent }),
-      })
+      await writeFile(filePath, prevContent)
       toast.success('Undone')
       setstate('idle')
       setPrevContent(null)

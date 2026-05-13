@@ -1,14 +1,33 @@
-# Coide – Agentic Web IDE
+# Coide - Multi-User Web IDE
 
-A full-stack agentic web IDE with Monaco Editor, real PTY terminal, and LLM-powered coding agent.
+Coide is a web-based IDE with Monaco editing, multi-tab terminal, chat-assisted coding, and authenticated per-user workspace isolation.
 
-## Architecture
+## Tech Stack
 
-- **Backend**: Python FastAPI + uvicorn, WebSocket PTY shell, file CRUD, agent loop
-- **Frontend**: React + Vite + Tailwind CSS, Monaco Editor, xterm.js terminal, streaming chat
-- **LLM**: Any OpenAI-compatible provider (Groq, OpenRouter, Google AI Studio, Ollama)
+- Frontend: React + Vite + Zustand + Monaco + xterm.js
+- Backend: FastAPI + WebSocket terminal + tool/chat services
+- Auth: Bearer token auth (`/auth/login`, `/auth/me`)
 
-## Setup
+## Key Features
+
+- IDE layout: activity bar, explorer, tabs, bottom panel, status bar
+- Multi-file editing with save/save-all
+- Explorer CRUD: create, rename, delete, upload
+- IDE-style quick input for file/folder creation (replaces browser `prompt` dialogs)
+- Multi-tab terminal with reconnect support
+- Chat panel with tool execution and checkpoint restore
+- Theme system with shared semantic tokens
+- Secure multi-user workspace isolation
+
+## Workspace Isolation
+
+- Every user is scoped to a dedicated workspace path:
+  - `workspace/users/<user_id>`
+- Backend APIs require auth and enforce ownership checks before file access.
+- Users cannot access other users' files, folders, terminal sessions, or workspace roots.
+- Terminal, runtime execution, git operations, and chat tools all run inside the authenticated user's workspace.
+
+## Local Development
 
 ### Prerequisites
 
@@ -23,7 +42,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-The backend starts on **http://localhost:8000**.
+Backend runs on `http://localhost:8000`.
 
 ### Frontend
 
@@ -33,59 +52,48 @@ npm install
 npm run dev
 ```
 
-The frontend starts on **http://localhost:5173**.
+Frontend runs on `http://localhost:5173`.
 
-### First Run
+## Default Local Login
 
-1. Open http://localhost:5173
-2. The **Model Configuration** modal appears automatically
-3. Choose a preset (Groq, OpenRouter, etc.) or enter your own:
-   - **API Base URL**: e.g. `https://api.groq.com/openai/v1`
-   - **Model**: e.g. `llama-3.3-70b-versatile`
-   - **API Key**: your provider API key
-4. Click **Save**
+For local development, default credentials are:
 
-## Usage
+- Username: `demo`
+- Password: `demo123`
 
-- **File Explorer** (left): Browse, open, create, rename, delete files in `workspace/`
-- **Editor** (center top): Monaco editor with syntax highlighting. `Ctrl+S` to save
-- **Terminal** (center bottom): Real bash shell in `workspace/`
-- **Agent Chat** (right): Ask the agent to write, refactor, or explain code
+You can override users via environment variable:
 
-## Supported LLM Providers
+- `COIDE_USERS_JSON`
 
-| Provider | Base URL | Notes |
-|---|---|---|
-| Groq | `https://api.groq.com/openai/v1` | Fast inference |
-| OpenRouter | `https://openrouter.ai/api/v1` | Many models |
-| Google AI Studio | `https://generativelanguage.googleapis.com/v1beta/openai` | Gemini models |
-| Ollama | `http://localhost:11434/v1` | Local models, no API key needed |
+Example value:
 
-## Project Structure
-
+```json
+{
+  "alice": { "password": "alice123", "user_id": "alice" },
+  "bob": { "password": "bob123", "user_id": "bob" }
+}
 ```
-project/
-├── backend/
-│   ├── main.py          # FastAPI app, CORS, routers
-│   ├── agent.py         # Agent loop with tool calling
-│   ├── tools.py         # Tool definitions and executors
-│   ├── terminal.py      # WebSocket PTY shell
-│   ├── files.py         # File CRUD REST endpoints
-│   └── requirements.txt
-├── frontend/
-│   ├── src/
-│   │   ├── App.jsx              # Three-panel layout
-│   │   ├── api.js               # All fetch/stream calls
-│   │   ├── components/
-│   │   │   ├── Editor.jsx       # Monaco editor
-│   │   │   ├── FileTree.jsx     # Sidebar file explorer
-│   │   │   ├── Terminal.jsx     # xterm.js terminal
-│   │   │   ├── ChatPanel.jsx    # Agent chat + streaming
-│   │   │   └── ConfigModal.jsx  # Model config modal
-│   │   └── hooks/
-│   │       ├── useFileTree.js
-│   │       └── useAgent.js
-│   ├── package.json
-│   └── vite.config.js
-└── workspace/           # Your project files live here
+
+## Environment Variables
+
+- `COIDE_AUTH_SECRET`: signing secret for auth tokens
+- `COIDE_TOKEN_TTL_SECONDS`: token lifetime (default `86400`)
+- `VITE_API_BASE`: frontend API base URL (optional)
+- `VITE_TERMINAL_WS_BASE`: terminal websocket base URL (optional)
+
+## Run Tests
+
+### Frontend
+
+```bash
+cd frontend
+npm test
 ```
+
+### Backend
+
+```bash
+cd backend
+python -m pytest -q
+```
+

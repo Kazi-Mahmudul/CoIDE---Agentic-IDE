@@ -257,6 +257,19 @@ export function applyTheme(themeKey) {
   Object.entries(theme.vars).forEach(([key, val]) => {
     root.style.setProperty(key, val)
   })
+  const fallback = {
+    '--bg-overlay': themeKey === 'light' ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.52)',
+    '--bg-elevated': theme.vars['--bg-panel'] || '#252526',
+    '--text-on-accent': '#ffffff',
+    '--text-danger': themeKey === 'light' ? '#b42318' : '#ff7b72',
+    '--text-success': themeKey === 'light' ? '#067647' : '#6ecf8e',
+    '--text-warning': themeKey === 'light' ? '#b54708' : '#e8c07d',
+    '--text-info': themeKey === 'light' ? '#175cd3' : '#7fb3ff',
+    '--border-focus': theme.vars['--accent-hover'] || '#4fa3ff',
+  }
+  Object.entries(fallback).forEach(([key, val]) => {
+    if (!root.style.getPropertyValue(key)) root.style.setProperty(key, val)
+  })
   root.setAttribute('data-theme', themeKey)
   return theme
 }

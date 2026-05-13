@@ -5,9 +5,10 @@ executes tools, and streams the final response back.
 
 import json
 import httpx
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from tools import TOOL_SCHEMAS, execute_tool
+from auth import UserContext, get_current_user, get_workspace_dir
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -15,7 +16,7 @@ MAX_ITERATIONS = 10
 
 
 @router.post("/chat")
-async def agent_chat(request: Request):
+async def agent_chat(request: Request, user: UserContext = Depends(get_current_user)):
     body = await request.json()
     messages = body.get("messages", [])
     config = body.get("model_config", {})
@@ -68,7 +69,7 @@ async def agent_chat(request: Request):
                                 tool_args = json.loads(func.get("arguments", "{}"))
                             except json.JSONDecodeError:
                                 tool_args = {}
-                            result = await execute_tool(tool_name, tool_args)
+                            result = await execute_tool(tool_name, tool_args, workspace_dir=workspace_dir)
                             yield json.dumps({"type": "tool_call", "name": tool_name, "args": tool_args, "result": result}) + "\n"
                             messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "content": result})
                         continue
@@ -90,3 +91,4 @@ async def agent_chat(request: Request):
             yield json.dumps({"type": "error", "content": f"Max iterations ({MAX_ITERATIONS}) reached"}) + "\n"
     
     return StreamingResponse(generate(), media_type="text/plain")
+    workspace_dir = get_workspace_dir(user)

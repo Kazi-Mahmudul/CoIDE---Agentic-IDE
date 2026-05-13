@@ -24,6 +24,16 @@ import { THEMES } from '../terminal/themes.js'
 
 function makeTabId() { return uuidv4() }
 
+function commandForFile(path) {
+  const ext = (path.split('.').pop() || '').toLowerCase()
+  const escaped = `"${path.replace(/"/g, '\\"')}"`
+  if (ext === 'py') return `python ${escaped}`
+  if (ext === 'js' || ext === 'mjs' || ext === 'cjs') return `node ${escaped}`
+  if (ext === 'ts') return `npx tsx ${escaped}`
+  if (ext === 'sh') return `bash ${escaped}`
+  return null
+}
+
 export default function Terminal({ cwd, onClose }) {
   const [settings, setSettings] = useState(() => loadSettings())
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -238,12 +248,12 @@ export default function Terminal({ cwd, onClose }) {
       wholeWord: opts.wholeWord,
       regex: opts.regex,
       decorations: {
-        matchBackground: '#ffff0040',
-        matchBorder: '#ffff00',
-        matchOverviewRuler: '#ffff00',
-        activeMatchBackground: '#ff800080',
-        activeMatchBorder: '#ff8000',
-        activeMatchColorOverviewRuler: '#ff8000',
+        matchBackground: 'var(--text-warning)',
+        matchBorder: 'var(--text-warning)',
+        matchOverviewRuler: 'var(--text-warning)',
+        activeMatchBackground: 'var(--accent)',
+        activeMatchBorder: 'var(--accent)',
+        activeMatchColorOverviewRuler: 'var(--accent)',
       },
     }
     if (direction === 'next') ref.searchAddon.findNext(query, searchOpts)
@@ -294,6 +304,30 @@ export default function Terminal({ cwd, onClose }) {
     return () => window.removeEventListener('keydown', handler)
   }, [addTab, closeTab, switchTab, splitH, toggleSearch, searchOpen, tabs, activeTabId, settings.fontSize, updateSettings])
 
+  // ── External IDE events (run file, clear terminal) ───────────────────────
+  useEffect(() => {
+    const onRunFile = (e) => {
+      const filePath = e?.detail?.path
+      if (!filePath || !activeTabId) return
+      const cmd = commandForFile(filePath)
+      if (!cmd) {
+        instancesRef.current.get(activeTabId)?.sendInput(`echo "No runner for ${filePath}"\r`)
+        return
+      }
+      instancesRef.current.get(activeTabId)?.sendInput(`${cmd}\r`)
+    }
+    const onClear = () => {
+      if (!activeTabId) return
+      instancesRef.current.get(activeTabId)?.sendInput('\x0c')
+    }
+    window.addEventListener('coide:run-file', onRunFile)
+    window.addEventListener('coide:clear-terminal', onClear)
+    return () => {
+      window.removeEventListener('coide:run-file', onRunFile)
+      window.removeEventListener('coide:clear-terminal', onClear)
+    }
+  }, [activeTabId])
+
   // ── Paste ─────────────────────────────────────────────────────────────────
   const handlePaste = useCallback(async (tabId) => {
     try {
@@ -324,12 +358,13 @@ export default function Terminal({ cwd, onClose }) {
 
   return (
     <div
-      className="h-full flex flex-col bg-[#0d0d0d] overflow-hidden"
+      className="h-full flex flex-col overflow-hidden"
+      style={{ background: 'var(--bg-editor)' }}
       aria-label="Terminal"
       role="region"
     >
       {/* Tab bar + close button */}
-      <div className="flex items-center flex-shrink-0 bg-[#1a1a1a] border-b border-[#333]">
+      <div className="flex items-center flex-shrink-0" style={{ background: 'var(--bg-panel)', borderBottom: '1px solid var(--border)' }}>
         <div className="flex-1 min-w-0">
           <TerminalTabs
             tabs={tabs}
@@ -343,7 +378,10 @@ export default function Terminal({ cwd, onClose }) {
         {onClose && (
           <button
             onClick={onClose}
-            className="flex-shrink-0 w-8 h-9 flex items-center justify-center text-[#555] hover:text-[#d4d4d4] hover:bg-[#3a3a3a] transition-colors border-l border-[#333]"
+            className="flex-shrink-0 w-8 h-9 flex items-center justify-center transition-colors"
+            style={{ color: 'var(--text-muted)', borderLeft: '1px solid var(--border)' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-bright)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)' }}
             title="Close terminal panel"
           >
             <X size={13} />
@@ -394,9 +432,12 @@ export default function Terminal({ cwd, onClose }) {
         {/* Split divider */}
         {splitMode && (
           <div
-            className={`flex-shrink-0 bg-[#2a2a2a] hover:bg-[#007acc] transition-colors ${
+            className={`flex-shrink-0 transition-colors ${
               splitMode === 'h' ? 'w-1 cursor-col-resize' : 'h-1 cursor-row-resize'
             }`}
+            style={{ background: 'var(--border-light)' }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--border-light)' }}
             onMouseDown={onSplitDragStart}
           />
         )}
@@ -414,7 +455,10 @@ export default function Terminal({ cwd, onClose }) {
               onRef={(ref) => { paneRefsRef.current[secondaryTabId] = ref }}
             />
             <button
-              className="absolute top-1 right-1 z-10 w-5 h-5 flex items-center justify-center rounded bg-[#333] hover:bg-[#555] text-[#858585] hover:text-white text-xs"
+              className="absolute top-1 right-1 z-10 w-5 h-5 flex items-center justify-center rounded text-xs transition-colors"
+              style={{ background: 'var(--bg-panel)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-bright)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--bg-panel)'; e.currentTarget.style.color = 'var(--text-secondary)' }}
               onClick={closeSecondPane}
               title="Close split pane"
             >✕</button>

@@ -5,9 +5,9 @@ import React from 'react'
 import { Plus, Search, Settings, Trash2 } from 'lucide-react'
 
 const STATUS_COLOR = {
-  connected: '#22c55e',
-  connecting: '#eab308',
-  disconnected: '#ef4444',
+  connected: 'var(--text-success)',
+  connecting: 'var(--text-warning)',
+  disconnected: 'var(--text-danger)',
 }
 
 function IconBtn({ onClick, title, children, disabled }) {
@@ -16,7 +16,10 @@ function IconBtn({ onClick, title, children, disabled }) {
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className="w-7 h-7 flex items-center justify-center rounded text-[#858585] hover:text-[#d4d4d4] hover:bg-[#3a3a3a] disabled:opacity-30 transition-colors flex-shrink-0"
+      className="w-7 h-7 flex items-center justify-center rounded disabled:opacity-30 transition-colors flex-shrink-0"
+      style={{ color: 'var(--text-secondary)' }}
+      onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-bright)'; e.currentTarget.style.background = 'var(--bg-hover)' }}
+      onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'transparent' }}
     >
       {children}
     </button>
@@ -32,7 +35,7 @@ export default function TerminalToolbar({
     : ''
 
   return (
-    <div className="flex items-center gap-1 px-2 h-9 bg-[#1a1a1a] border-b border-[#333] flex-shrink-0">
+    <div className="flex items-center gap-1 px-2 h-9 flex-shrink-0" style={{ background: 'var(--bg-panel)', borderBottom: '1px solid var(--border)' }}>
       <IconBtn onClick={onNewTab} title="New tab (Ctrl+Shift+T)"><Plus size={13} /></IconBtn>
 
       {/* Split H */}
@@ -57,7 +60,7 @@ export default function TerminalToolbar({
       {/* CWD breadcrumb */}
       <div className="flex-1 min-w-0 px-2">
         {shortCwd && (
-          <span className="text-[10px] text-[#555] truncate block" title={cwd}>
+          <span className="text-[10px] truncate block" style={{ color: 'var(--text-muted)' }} title={cwd}>
             {shortCwd}
           </span>
         )}
@@ -71,7 +74,7 @@ export default function TerminalToolbar({
           title={status}
           aria-label={`Terminal ${status}`}
         />
-        <span className="text-[10px] text-[#555] capitalize">{status}</span>
+        <span className="text-[10px] capitalize" style={{ color: 'var(--text-muted)' }}>{status}</span>
       </div>
 
       <IconBtn onClick={onSettings} title="Settings"><Settings size={13} /></IconBtn>
