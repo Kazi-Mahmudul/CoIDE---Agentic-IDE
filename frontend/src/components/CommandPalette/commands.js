@@ -18,6 +18,10 @@ export function registerCommands({ editorRef, openCommandPalette, onOpenThemePic
     { id: 'view.problems',          label: 'View: Show Problems',                 shortcut: 'Ctrl+Shift+M',   action: () => store().setBottomTab('problems') },
     { id: 'view.output',            label: 'View: Show Output',                   shortcut: 'Ctrl+Shift+U',   action: () => store().setBottomTab('output') },
     { id: 'view.debug',             label: 'View: Show Debug Console',            shortcut: 'Ctrl+Shift+Y',   action: () => store().setBottomTab('debug') },
+    { id: 'view.chat',              label: 'View: Show Chat Panel',               shortcut: '',               action: () => { store().setRightTab('chat'); store().openRightPanel() } },
+    { id: 'view.preview',           label: 'View: Show Preview Panel',            shortcut: '',               action: () => { store().setRightTab('preview'); store().openRightPanel() } },
+    { id: 'view.layoutSettings',    label: 'View: Show Layout Settings',          shortcut: '',               action: () => { store().setRightTab('settings'); store().openRightPanel() } },
+    { id: 'view.toggleRightPanel',  label: 'View: Toggle Right Panel',            shortcut: '',               action: () => store().toggleRightPanel() },
 
     // ── File operations ────────────────────────────────────────────────────
     { id: 'file.save',              label: 'File: Save',                          shortcut: 'Ctrl+S',         action: () => editorRef?.current?.save?.() },

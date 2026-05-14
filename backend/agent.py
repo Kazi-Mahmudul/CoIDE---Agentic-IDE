@@ -20,6 +20,7 @@ async def agent_chat(request: Request, user: UserContext = Depends(get_current_u
     body = await request.json()
     messages = body.get("messages", [])
     config = body.get("model_config", {})
+    workspace_dir = get_workspace_dir(user)
     
     base_url = config.get("base_url", "").rstrip("/")
     model = config.get("model", "")
@@ -91,4 +92,3 @@ async def agent_chat(request: Request, user: UserContext = Depends(get_current_u
             yield json.dumps({"type": "error", "content": f"Max iterations ({MAX_ITERATIONS}) reached"}) + "\n"
     
     return StreamingResponse(generate(), media_type="text/plain")
-    workspace_dir = get_workspace_dir(user)

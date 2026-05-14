@@ -11,33 +11,26 @@ import contextvars
 from pathlib import Path
 
 from config import WORKSPACE_DIR
+from workspace import ensure_workspace_dir, resolve_workspace_path
 
 DANGEROUS_PATTERNS = ("rm -rf /", "del /f /s /q", "format ", "mkfs", ":(){:|:&};:", "shutdown", "reboot")
 _workspace_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("workspace_dir_legacy", default=None)
 
 
 def set_workspace_dir(workspace_dir: str):
-    _workspace_var.set(workspace_dir)
+    _workspace_var.set(ensure_workspace_dir(workspace_dir))
 
 
 def get_workspace_dir() -> str:
-    return _workspace_var.get() or WORKSPACE_DIR
+    return _workspace_var.get() or ensure_workspace_dir(WORKSPACE_DIR)
 
 
 def _safe_path(path: str) -> str:
     """Sanitize and resolve a path to ensure it stays within workspace/."""
-    # Normalize the path and resolve any .. or . components
-    if path.startswith("workspace/") or path.startswith("workspace\\"):
-        path = path[len("workspace/"):] if path.startswith("workspace/") else path[len("workspace\\"):]
-    
-    workspace_dir = get_workspace_dir()
-    resolved = Path(workspace_dir).joinpath(path).resolve()
-    workspace = Path(workspace_dir).resolve()
     try:
-        resolved.relative_to(workspace)
-    except ValueError:
+        return resolve_workspace_path(get_workspace_dir(), path)
+    except Exception:
         raise ValueError(f"Path traversal detected: {path}")
-    return str(resolved)
 
 
 # ──────────────────────────── Tool Functions ────────────────────────────
@@ -334,10 +327,16 @@ async def execute_tool(name: str, arguments: dict, workspace_dir: str | None = N
     executor = TOOL_EXECUTORS.get(name)
     if not executor:
         return f"Unknown tool: {name}"
+    token = None
     try:
         if workspace_dir:
-            set_workspace_dir(workspace_dir)
+            token = _workspace_var.set(ensure_workspace_dir(workspace_dir))
         result = await executor(**arguments)
         return result
+    except TypeError as e:
+        return f"Error executing {name}: invalid arguments: {e}"
     except Exception as e:
         return f"Error executing {name}: {e}"
+    finally:
+        if token is not None:
+            _workspace_var.reset(token)

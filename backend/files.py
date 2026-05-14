@@ -15,6 +15,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from pydantic import BaseModel
 from auth import UserContext, get_current_user, get_workspace_dir
+from workspace import resolve_workspace_path
 
 router = APIRouter(tags=["files"])
 
@@ -23,18 +24,7 @@ router = APIRouter(tags=["files"])
 
 def _safe_workspace_path(workspace_dir: str, path: str) -> str:
     """Resolve a workspace-relative path, blocking traversal."""
-    # Strip leading workspace/ prefix if present
-    for prefix in ("workspace/", "workspace\\"):
-        if path.startswith(prefix):
-            path = path[len(prefix):]
-            break
-    resolved = Path(workspace_dir).joinpath(path).resolve()
-    workspace = Path(workspace_dir).resolve()
-    try:
-        resolved.relative_to(workspace)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Path traversal not allowed")
-    return str(resolved)
+    return resolve_workspace_path(workspace_dir, path)
 
 
 def _build_tree(dir_path: str, base: str) -> list:
@@ -154,6 +144,7 @@ async def search_files(
     """Full-text search across all workspace files."""
     if not q.strip():
         return {"results": []}
+    workspace_dir = get_workspace_dir(user)
 
     results = []
     max_results = 100
@@ -446,4 +437,3 @@ async def external_roots(user: UserContext = Depends(get_current_user)):
     """Return allowed roots for current user."""
     user_root = get_workspace_dir(user).replace("\\", "/")
     return {"roots": [{"name": "My Workspace", "path": user_root}]}
-    workspace_dir = get_workspace_dir(user)

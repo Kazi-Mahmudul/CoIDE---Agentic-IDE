@@ -6,6 +6,8 @@ const STORAGE_KEY = 'coide-ide-state'
 const PERSISTED = [
   'sidePanelOpen', 'sidePanelWidth', 'activeActivityTab',
   'bottomPanelOpen', 'bottomPanelHeight', 'activeBottomTab',
+  'rightPanelOpen', 'rightPanelWidth', 'activeRightTab',
+  'panelVisibility',
   'theme', 'fontSize',
 ]
 
@@ -32,6 +34,16 @@ const defaults = {
   bottomPanelOpen: true,
   bottomPanelHeight: 220,
   activeBottomTab: 'terminal',
+  rightPanelOpen: true,
+  rightPanelWidth: 320,
+  activeRightTab: 'chat',
+  panelVisibility: {
+    explorer: true,
+    terminal: true,
+    chat: true,
+    preview: false,
+    settings: false,
+  },
   openFiles: [],
   activeFileId: null,
   commandPaletteOpen: false,
@@ -44,7 +56,14 @@ const defaults = {
 
 export const useIDEStore = create((set, get) => {
   const saved = loadPersisted()
-  const initial = { ...defaults, ...saved }
+  const initial = {
+    ...defaults,
+    ...saved,
+    panelVisibility: {
+      ...defaults.panelVisibility,
+      ...(saved.panelVisibility || {}),
+    },
+  }
 
   // Apply saved theme immediately on store creation
   applyTheme(initial.theme || 'dark')
@@ -58,18 +77,63 @@ export const useIDEStore = create((set, get) => {
     ...initial,
 
     // ── Side panel ──────────────────────────────────────────────────────────
-    toggleSidePanel: () => persist(() => set(s => ({ sidePanelOpen: !s.sidePanelOpen }))),
-    openSidePanel: () => persist(() => set({ sidePanelOpen: true })),
-    closeSidePanel: () => persist(() => set({ sidePanelOpen: false })),
+    toggleSidePanel: () => persist(() => set(s => {
+      const next = !s.sidePanelOpen
+      return { sidePanelOpen: next, panelVisibility: { ...s.panelVisibility, explorer: next } }
+    })),
+    openSidePanel: () => persist(() => set(s => ({ sidePanelOpen: true, panelVisibility: { ...s.panelVisibility, explorer: true } }))),
+    closeSidePanel: () => persist(() => set(s => ({ sidePanelOpen: false, panelVisibility: { ...s.panelVisibility, explorer: false } }))),
     setSidePanelWidth: (w) => persist(() => set({ sidePanelWidth: Math.max(160, Math.min(480, w)) })),
     setActivityTab: (tab) => persist(() => set({ activeActivityTab: tab })),
 
     // ── Bottom panel ────────────────────────────────────────────────────────
-    toggleBottomPanel: () => persist(() => set(s => ({ bottomPanelOpen: !s.bottomPanelOpen }))),
-    openBottomPanel: () => persist(() => set({ bottomPanelOpen: true })),
-    closeBottomPanel: () => persist(() => set({ bottomPanelOpen: false })),
-    setBottomTab: (tab) => persist(() => set({ activeBottomTab: tab, bottomPanelOpen: true })),
+    toggleBottomPanel: () => persist(() => set(s => {
+      const next = !s.bottomPanelOpen
+      return { bottomPanelOpen: next, panelVisibility: { ...s.panelVisibility, terminal: next } }
+    })),
+    openBottomPanel: () => persist(() => set(s => ({ bottomPanelOpen: true, panelVisibility: { ...s.panelVisibility, terminal: true } }))),
+    closeBottomPanel: () => persist(() => set(s => ({ bottomPanelOpen: false, panelVisibility: { ...s.panelVisibility, terminal: false } }))),
+    setBottomTab: (tab) => persist(() => set(s => ({ activeBottomTab: tab, bottomPanelOpen: true, panelVisibility: { ...s.panelVisibility, terminal: true } }))),
     setBottomPanelHeight: (h) => persist(() => set({ bottomPanelHeight: Math.max(80, h) })),
+
+    // ── Right panel ─────────────────────────────────────────────────────────
+    toggleRightPanel: () => persist(() => set(s => ({ rightPanelOpen: !s.rightPanelOpen }))),
+    openRightPanel: () => persist(() => set({ rightPanelOpen: true })),
+    closeRightPanel: () => persist(() => set({ rightPanelOpen: false })),
+    setRightPanelWidth: (w) => persist(() => set({ rightPanelWidth: Math.max(260, Math.min(700, w)) })),
+    setRightTab: (tab) => persist(() => set(s => ({
+      activeRightTab: tab,
+      rightPanelOpen: true,
+      panelVisibility: { ...s.panelVisibility, [tab]: true },
+    }))),
+
+    togglePanelVisibility: (panel) => persist(() => set((s) => {
+      const nextVisibility = { ...s.panelVisibility }
+      if (!(panel in nextVisibility)) {
+        return {}
+      }
+      nextVisibility[panel] = !nextVisibility[panel]
+      if (panel === 'explorer') {
+        return { panelVisibility: nextVisibility, sidePanelOpen: nextVisibility.explorer }
+      }
+      if (panel === 'terminal') {
+        return { panelVisibility: nextVisibility, bottomPanelOpen: nextVisibility.terminal }
+      }
+        if (panel === 'chat' || panel === 'preview' || panel === 'settings') {
+          const rightTabs = ['chat', 'preview', 'settings']
+          const anyRightVisible = rightTabs.some((t) => nextVisibility[t])
+          let nextTab = s.activeRightTab
+          if (!nextVisibility[nextTab] && anyRightVisible) {
+            nextTab = rightTabs.find((t) => nextVisibility[t]) || nextTab
+          }
+          return {
+            panelVisibility: nextVisibility,
+            rightPanelOpen: anyRightVisible,
+            activeRightTab: anyRightVisible ? nextTab : s.activeRightTab,
+          }
+        }
+      return { panelVisibility: nextVisibility }
+    })),
 
     // ── Editor files ────────────────────────────────────────────────────────
     openFile: (file) => set(s => {

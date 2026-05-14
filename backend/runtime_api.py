@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import shlex
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -53,6 +54,7 @@ async def run_command(body: CommandBody, user: UserContext = Depends(get_current
     cwd = _safe_cwd(workspace_dir, body.cwd)
     timeout = max(1, min(body.timeout, MAX_TIMEOUT))
     argv = _parse_command(body.command)
+    started = time.perf_counter()
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -85,4 +87,7 @@ async def run_command(body: CommandBody, user: UserContext = Depends(get_current
         "return_code": proc.returncode,
         "stdout": out_text,
         "stderr": err_text,
+        "command": argv,
+        "cwd": cwd,
+        "duration_ms": int((time.perf_counter() - started) * 1000),
     }

@@ -19,6 +19,7 @@ export default function ActivityBar() {
   const {
     activeActivityTab, sidePanelOpen,
     setActivityTab, toggleSidePanel, openSidePanel,
+    setRightTab, openRightPanel,
     openCommandPalette,
   } = useIDEStore()
 
@@ -28,6 +29,11 @@ export default function ActivityBar() {
       return
     }
     if (id === 'accounts') return
+    if (id === 'chat') {
+      setRightTab('chat')
+      openRightPanel()
+      return
+    }
 
     if (activeActivityTab === id && sidePanelOpen) {
       toggleSidePanel()

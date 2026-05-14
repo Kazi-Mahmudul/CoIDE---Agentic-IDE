@@ -11,12 +11,11 @@ import json
 import os
 import time
 from dataclasses import dataclass
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
-from config import WORKSPACE_DIR
+from workspace import ensure_workspace_root, get_user_workspace_dir
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -113,13 +112,7 @@ def verify_token(token: str) -> UserContext:
 
 
 def get_workspace_dir(user: UserContext) -> str:
-    user_id = "".join(ch for ch in user.user_id if ch.isalnum() or ch in ("-", "_"))
-    if not user_id:
-        raise HTTPException(status_code=400, detail="Invalid user id")
-    root = Path(WORKSPACE_DIR).resolve()
-    user_dir = root / "users" / user_id
-    user_dir.mkdir(parents=True, exist_ok=True)
-    return str(user_dir.resolve())
+    return get_user_workspace_dir(user.user_id)
 
 
 def get_current_user(authorization: str | None = Header(default=None)) -> UserContext:
@@ -146,6 +139,7 @@ async def login(body: LoginBody):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     token = create_token(rec["user_id"], username)
     user = UserContext(user_id=rec["user_id"], username=username)
+    ensure_workspace_root()
     workspace = get_workspace_dir(user)
     return {
         "token": token,

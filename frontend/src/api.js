@@ -21,7 +21,9 @@ async function request(path, init = {}) {
   const isJson = contentType.includes('application/json')
   const body = isJson ? await res.json() : await res.text()
   if (!res.ok) {
-    const detail = isJson ? (body?.detail || body?.message || res.statusText) : (body || res.statusText)
+    const detail = isJson
+      ? (body?.detail || body?.error?.message || body?.message || res.statusText)
+      : (body || res.statusText)
     throw new Error(detail)
   }
   return body
@@ -165,6 +167,18 @@ export async function execRuntime(command, cwd = null, timeout = 30) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ command, cwd, timeout }),
+  })
+}
+
+export async function listProjectTemplates() {
+  return request('/projects/templates')
+}
+
+export async function scaffoldProject(template, name, install = false) {
+  return request('/projects/scaffold', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ template, name, install }),
   })
 }
 

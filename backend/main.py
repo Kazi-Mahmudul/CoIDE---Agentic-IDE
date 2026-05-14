@@ -3,10 +3,12 @@ FastAPI main application.
 Mounts all routers, sets up CORS, ensures workspace/ exists.
 """
 
-import os
 import logging
+import time
+import uuid
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import WORKSPACE_DIR
@@ -16,17 +18,19 @@ from terminal import router as terminal_router
 from chat.router import router as chat_router
 from git_api import router as git_router
 from runtime_api import router as runtime_router
+from project_api import router as project_router
 from auth import router as auth_router
 from auth import UserContext, get_current_user, get_workspace_dir
 from fastapi import Depends
+from workspace import ensure_workspace_root
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("coide.api")
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    os.makedirs(WORKSPACE_DIR, exist_ok=True)
-    os.makedirs(os.path.join(WORKSPACE_DIR, "users"), exist_ok=True)
+    ensure_workspace_root()
     print(f"[Coide] Workspace: {WORKSPACE_DIR}")
     yield
 
@@ -41,12 +45,64 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    request_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:12]
+    request.state.request_id = request_id
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("Unhandled server error", extra={"request_id": request_id, "path": request.url.path})
+        raise
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    response.headers["x-request-id"] = request_id
+    logger.info("%s %s -> %s (%sms)", request.method, request.url.path, response.status_code, elapsed_ms)
+    return response
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    request_id = getattr(request.state, "request_id", None)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "status": "error",
+            "error": {
+                "code": exc.status_code,
+                "message": str(exc.detail),
+                "request_id": request_id,
+            },
+            "detail": exc.detail,
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    request_id = getattr(request.state, "request_id", None)
+    logger.exception("Unhandled exception", extra={"request_id": request_id, "path": request.url.path})
+    return JSONResponse(
+        status_code=500,
+        content={
+            "status": "error",
+            "error": {
+                "code": 500,
+                "message": "Internal server error",
+                "request_id": request_id,
+            },
+            "detail": "Internal server error",
+        },
+    )
+
 app.include_router(files_router)
 app.include_router(agent_router)
 app.include_router(terminal_router)
 app.include_router(chat_router)
 app.include_router(git_router)
 app.include_router(runtime_router)
+app.include_router(project_router)
 app.include_router(auth_router)
 
 

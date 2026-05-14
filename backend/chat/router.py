@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
@@ -29,6 +28,7 @@ async def chat_message(request: Request, user: UserContext = Depends(get_current
     Each line is a JSON object with a 'type' field.
     """
     body = await request.json()
+    workspace_dir = get_workspace_dir(user)
 
     thread_id = f"{user.user_id}:{body.get('thread_id', 'default')}"
     messages = body.get("messages", [])
@@ -127,4 +127,3 @@ async def get_checkpoint_info(checkpoint_id: str, user: UserContext = Depends(ge
         "timestamp": cp["timestamp"],
         "files": list(cp["files"].keys()),
     }
-    workspace_dir = get_workspace_dir(user)

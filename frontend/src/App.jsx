@@ -31,7 +31,7 @@ import Editor from './components/Editor/Editor.jsx'
 import BottomPanel from './components/BottomPanel/BottomPanel.jsx'
 import StatusBar from './components/StatusBar/StatusBar.jsx'
 import CommandPalette from './components/CommandPalette/CommandPalette.jsx'
-import ChatPanel from './components/ChatPanel/ChatPanel.jsx'
+import RightPanel from './components/RightPanel/RightPanel.jsx'
 import ConfigModal from './components/ConfigModal.jsx'
 import FolderPicker from './components/FolderPicker.jsx'
 import ThemePicker from './components/ThemePicker.jsx'
@@ -480,18 +480,13 @@ export default function App() {
           )}
         </div>
 
-        {/* Right: Agent chat */}
-        <div
-          className="w-80 flex-shrink-0 flex flex-col ide-chatpanel"
-        >
-          <ChatPanel
-            activeFile={activeFile}
-            tree={tree}
-            markers={markers}
-            onFileOpen={handleFileOpen}
-            onFileWrite={handleAgentFileWrite}
-          />
-        </div>
+        <RightPanel
+          activeFile={activeFile}
+          tree={tree}
+          markers={markers}
+          onFileOpen={handleFileOpen}
+          onFileWrite={handleAgentFileWrite}
+        />
       </div>
 
       {/* Status bar */}
