@@ -230,3 +230,11 @@ export async function login(username, password) {
 export async function getCurrentUser() {
   return request('/auth/me')
 }
+
+export async function listChatUploads(sessionId = 'default') {
+  return request(`/chat/uploads?session_id=${encodeURIComponent(sessionId)}`)
+}
+
+export function getChatUploadUrl(uploadId, sessionId = 'default') {
+  return `${BASE}/chat/uploads/${encodeURIComponent(uploadId)}?session_id=${encodeURIComponent(sessionId)}`
+}

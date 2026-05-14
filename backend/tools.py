@@ -112,6 +112,45 @@ async def run_command(command: str) -> str:
         return f"Error running command: {e}"
 
 
+async def web_search(query: str) -> str:
+    """Search the web and return short formatted results."""
+    try:
+        import httpx
+        api_key = os.environ.get("SEARCH_API_KEY", "")
+        async with httpx.AsyncClient(timeout=10) as client:
+            if api_key:
+                resp = await client.get(
+                    "https://api.search.brave.com/res/v1/web/search",
+                    params={"q": query, "count": 5},
+                    headers={"Accept": "application/json", "X-Subscription-Token": api_key},
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    results = data.get("web", {}).get("results", [])
+                    if results:
+                        return "\n".join(
+                            f"{r.get('title')}\n{r.get('url')}\n{r.get('description', '')}"
+                            for r in results[:5]
+                        )
+            ia = await client.get(
+                "https://api.duckduckgo.com/",
+                params={"q": query, "format": "json", "no_redirect": "1", "no_html": "1"},
+            )
+            if ia.status_code == 200:
+                data = ia.json()
+                lines = []
+                if data.get("AbstractText"):
+                    lines.append(f"{data.get('AbstractSource') or 'Summary'}\n{data.get('AbstractURL') or ''}\n{data.get('AbstractText')}")
+                for topic in (data.get("RelatedTopics") or [])[:5]:
+                    if isinstance(topic, dict) and topic.get("Text"):
+                        lines.append(f"Result\n{topic.get('FirstURL') or ''}\n{topic.get('Text')}")
+                if lines:
+                    return "\n\n".join(lines)
+            return f"No results found for '{query}'"
+    except Exception as e:
+        return f"Search error: {e}"
+
+
 async def search_code(query: str, path: str = "") -> str:
     """Search for a string pattern in files (grep-style)."""
     safe = _safe_path(path) if path else get_workspace_dir()
@@ -187,6 +226,7 @@ TOOL_EXECUTORS = {
     "search_code": search_code,
     "create_file": create_file,
     "delete_file": delete_file,
+    "web_search": web_search,
 }
 
 TOOL_SCHEMAS = [
@@ -280,6 +320,20 @@ TOOL_SCHEMAS = [
                         "description": "Subdirectory to search in (empty for entire workspace)",
                         "default": ""
                     }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the web for up-to-date information.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"}
                 },
                 "required": ["query"]
             }

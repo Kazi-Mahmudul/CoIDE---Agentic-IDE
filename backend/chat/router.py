@@ -5,14 +5,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse
 
 from .agent import run_agent
 from .memory import restore_checkpoint, get_checkpoint
-from .uploads import process_upload
+from .uploads import process_upload, list_uploads, get_upload, load_recent_images
 from auth import UserContext, get_current_user, get_workspace_dir
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -34,6 +36,13 @@ async def chat_message(request: Request, user: UserContext = Depends(get_current
     messages = body.get("messages", [])
     context = body.get("context", {})
     context["user_id"] = user.user_id
+    context["session_id"] = body.get("session_id") or body.get("thread_id") or "default"
+    if not context.get("attached_images"):
+        context["attached_images"] = load_recent_images(
+            context["session_id"],
+            workspace_dir=workspace_dir,
+            user_id=user.user_id,
+        )
     model_config = body.get("model_config", {})
     mode = body.get("mode", "auto")
     settings = body.get("settings", {})
@@ -102,6 +111,36 @@ async def upload_files(
         results.append(result)
 
     return {"files": results}
+
+
+@router.get("/uploads")
+async def list_uploads_endpoint(
+    session_id: str = Query("default"),
+    user: UserContext = Depends(get_current_user),
+):
+    workspace_dir = get_workspace_dir(user)
+    return {"session_id": session_id, "files": list_uploads(session_id, workspace_dir=workspace_dir, user_id=user.user_id)}
+
+
+@router.get("/uploads/{upload_id}")
+async def get_upload_endpoint(
+    upload_id: str,
+    session_id: str = Query("default"),
+    user: UserContext = Depends(get_current_user),
+):
+    workspace_dir = get_workspace_dir(user)
+    meta = get_upload(upload_id, session_id=session_id, workspace_dir=workspace_dir, user_id=user.user_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="Upload not found")
+    path = meta.get("storage_path")
+    if not path:
+        raise HTTPException(status_code=404, detail="Upload file unavailable")
+    safe_root = Path(workspace_dir).resolve()
+    try:
+        Path(path).resolve().relative_to(safe_root)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Upload path is outside workspace")
+    return FileResponse(path=path, filename=meta.get("filename"))
 
 
 @router.post("/checkpoint/{checkpoint_id}/restore")

@@ -38,7 +38,10 @@ def build_system_prompt(
     git_branch: Optional[str] = None,
     codebase_summary: Optional[str] = None,
     attached_files: Optional[list] = None,
+    attached_images: Optional[list] = None,
     terminal_output: Optional[str] = None,
+    brain_mode: bool = False,
+    web_search_enabled: bool = False,
     max_file_lines: int = 200,
 ) -> str:
     branch = git_branch or get_git_branch(workspace_dir)
@@ -99,5 +102,14 @@ Git branch: {branch}"""
 
     if codebase_summary:
         parts.append(f"\nCodebase summary:\n{codebase_summary}")
+
+    if attached_images:
+        names = [img.get("filename", "image") for img in attached_images[:5]]
+        parts.append(f"\nAttached images ({len(attached_images)}): {', '.join(names)}")
+
+    if brain_mode:
+        parts.append("\nBrain mode: enabled (use structured planning and deeper reasoning).")
+    if web_search_enabled:
+        parts.append("\nWeb search mode: enabled (use search tools when external information is needed).")
 
     return "\n".join(parts)

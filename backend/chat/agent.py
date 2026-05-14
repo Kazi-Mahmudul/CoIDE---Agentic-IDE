@@ -27,6 +27,58 @@ def _emit(obj: dict) -> str:
     return json.dumps(obj) + "\n"
 
 
+def _image_to_content_part(image: dict) -> dict | None:
+    media_type = image.get("media_type") or "image/png"
+    if image.get("base64"):
+        return {
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:{media_type};base64,{image['base64']}",
+            },
+        }
+    url = image.get("url")
+    if url:
+        return {"type": "image_url", "image_url": {"url": url}}
+    return None
+
+
+def _message_with_images(msg: dict, images: list[dict]) -> dict:
+    patched = dict(msg)
+    existing_content = patched.get("content", "") or ""
+    if isinstance(existing_content, list):
+        text_parts = [p.get("text", "") for p in existing_content if isinstance(p, dict) and p.get("type") == "text"]
+        text = "\n".join([t for t in text_parts if t])
+    else:
+        text = str(existing_content)
+    content_parts = [{"type": "text", "text": text}]
+    for image in images[:6]:
+        part = _image_to_content_part(image)
+        if part:
+            content_parts.append(part)
+    patched["content"] = content_parts
+    return patched
+
+
+def _normalize_messages_with_images(messages: list[dict], attached_images: list[dict]) -> list[dict]:
+    normalized: list[dict] = []
+    for msg in messages:
+        role = msg.get("role")
+        if role == "user" and isinstance(msg.get("images"), list) and msg.get("images"):
+            normalized.append(_message_with_images(msg, msg.get("images") or []))
+        else:
+            normalized.append(msg)
+
+    if not normalized or not attached_images:
+        return normalized
+
+    # Also ensure current request-level attached images are appended to latest user message.
+    for i in range(len(normalized) - 1, -1, -1):
+        if normalized[i].get("role") == "user":
+            normalized[i] = _message_with_images(normalized[i], attached_images)
+            break
+    return normalized
+
+
 async def run_agent(
     messages: list[dict],
     context: dict,
@@ -40,7 +92,11 @@ async def run_agent(
     Main agentic loop. Yields NDJSON lines.
     """
     settings = settings or {}
+    brain_mode = bool(settings.get("brain_mode"))
+    web_search_enabled = bool(settings.get("web_search_enabled"))
     max_iterations = settings.get("max_iterations", 20)
+    if brain_mode:
+        max_iterations = max(max_iterations, 35)
     auto_apply = settings.get("auto_apply", False)
 
     base_url = model_config.get("base_url", "").rstrip("/")
@@ -56,6 +112,8 @@ async def run_agent(
     # Detect mode
     last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
     detected_mode = classify(last_user, mode)
+    if web_search_enabled and detected_mode == "chat":
+        detected_mode = "agent"
     yield _emit({"type": "mode", "mode": detected_mode})
 
     # Build system prompt
@@ -69,18 +127,42 @@ async def run_agent(
         git_branch=context.get("git_branch"),
         codebase_summary=context.get("codebase_summary"),
         attached_files=context.get("attached_files"),
+        attached_images=context.get("attached_images"),
         terminal_output=context.get("terminal_output"),
+        brain_mode=brain_mode,
+        web_search_enabled=web_search_enabled,
     )
 
     # Build message list
     llm_messages = [{"role": "system", "content": system_content}]
+    attached_images = context.get("attached_images", []) or []
+    normalized_messages = _normalize_messages_with_images(messages, attached_images)
+    llm_messages.extend(normalized_messages)
 
-    # Add attached images if any
-    for img in context.get("attached_images", []):
-        # Vision: add as user message with image_url
-        pass  # handled inline below
-
-    llm_messages.extend(messages)
+    if brain_mode:
+        plan = [
+            "Understand request and constraints",
+            "Inspect relevant files and state",
+            "Design a minimal safe implementation plan",
+            "Execute changes step by step",
+            "Verify with tests/commands and summarize results",
+        ]
+        yield _emit({"type": "thinking", "content": "Plan:\n" + "\n".join(f"{i+1}. {s}" for i, s in enumerate(plan))})
+        llm_messages.append({
+            "role": "system",
+            "content": (
+                "Brain mode is enabled. Use explicit planning and verification. "
+                "Prefer multi-step execution with clear intermediate checks."
+            ),
+        })
+    if web_search_enabled:
+        llm_messages.append({
+            "role": "system",
+            "content": (
+                "Web search mode is enabled. Use web_search and fetch_url tools when external facts, "
+                "libraries, docs, or current references are needed."
+            ),
+        })
 
     headers = {"Content-Type": "application/json"}
     if api_key:

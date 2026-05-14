@@ -339,25 +339,45 @@ async def git_create_branch(name: str) -> str:
 # ── Web tools ─────────────────────────────────────────────────────────────────
 
 async def web_search(query: str) -> str:
-    api_key = os.environ.get("SEARCH_API_KEY", "")
-    if not api_key:
-        return "Web search not configured. Set SEARCH_API_KEY environment variable."
     try:
         import httpx
+        api_key = os.environ.get("SEARCH_API_KEY", "")
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(
-                "https://api.search.brave.com/res/v1/web/search",
-                params={"q": query, "count": 5},
-                headers={"Accept": "application/json", "X-Subscription-Token": api_key},
+            if api_key:
+                resp = await client.get(
+                    "https://api.search.brave.com/res/v1/web/search",
+                    params={"q": query, "count": 5},
+                    headers={"Accept": "application/json", "X-Subscription-Token": api_key},
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    results = data.get("web", {}).get("results", [])
+                    lines = []
+                    for r in results[:5]:
+                        lines.append(f"**{r.get('title')}**\n{r.get('url')}\n{r.get('description', '')}\n")
+                    if lines:
+                        return "\n".join(lines)
+
+            # Fallback: DuckDuckGo instant answer API + lite html page scraping.
+            ia = await client.get(
+                "https://api.duckduckgo.com/",
+                params={"q": query, "format": "json", "no_redirect": "1", "no_html": "1"},
             )
-            if resp.status_code != 200:
-                return f"Search failed: {resp.status_code}"
-            data = resp.json()
-            results = data.get("web", {}).get("results", [])
             lines = []
-            for r in results[:5]:
-                lines.append(f"**{r.get('title')}**\n{r.get('url')}\n{r.get('description', '')}\n")
-            return "\n".join(lines) if lines else "No results found."
+            if ia.status_code == 200:
+                data = ia.json()
+                abstract = (data.get("AbstractText") or "").strip()
+                source = (data.get("AbstractSource") or "").strip()
+                url = (data.get("AbstractURL") or "").strip()
+                if abstract:
+                    lines.append(f"**{source or 'Summary'}**\n{url or 'n/a'}\n{abstract}\n")
+                related = data.get("RelatedTopics") or []
+                for topic in related[:5]:
+                    text = (topic.get("Text") or "").strip() if isinstance(topic, dict) else ""
+                    first_url = (topic.get("FirstURL") or "").strip() if isinstance(topic, dict) else ""
+                    if text:
+                        lines.append(f"**Result**\n{first_url or 'n/a'}\n{text}\n")
+            return "\n".join(lines) if lines else f"No results found for '{query}'."
     except Exception as e:
         return f"Search error: {e}"
 

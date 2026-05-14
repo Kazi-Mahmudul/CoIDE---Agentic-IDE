@@ -17,7 +17,7 @@ function estimateTokens(text) { return Math.ceil((text || '').length / 4) }
  * - Strip large content from older messages (keep only first 200 chars)
  * - Never strip the most recent 2 messages
  */
-function buildLLMHistory(messages, newUserContent) {
+function buildLLMHistory(messages, newUserContent, newUserImages = []) {
   const recent = messages.slice(-6)
   const trimmed = recent.map((m, i) => {
     const isOld = i < recent.length - 2
@@ -28,9 +28,10 @@ function buildLLMHistory(messages, newUserContent) {
       content: isOld && content.length > 200
         ? content.slice(0, 200) + '… [truncated]'
         : content,
+      images: m.role === 'user' ? (m.images || []).slice(0, 4) : [],
     }
   })
-  trimmed.push({ role: 'user', content: newUserContent })
+  trimmed.push({ role: 'user', content: newUserContent, images: newUserImages.slice(0, 6) })
   return trimmed
 }
 
@@ -59,7 +60,7 @@ export default function ChatPanel({ activeFile, tree = [], markers = [], onFileO
   const getModelConfig = () => JSON.parse(localStorage.getItem('modelConfig') || '{}')
   const getChatSettings = () => JSON.parse(localStorage.getItem('chat_settings') || '{}')
 
-  const handleSend = useCallback(async ({ text, images = [], contextChips: chips = [], _slash, _suggestion }) => {
+  const handleSend = useCallback(async ({ text, images = [], contextChips: chips = [], webSearchEnabled = false, brainModeEnabled = false, _slash, _suggestion }) => {
     // ── Slash commands ────────────────────────────────────────────────────
     if (_slash === 'clear') { clearThread(activeThreadId); return }
     if (_slash === 'new') { newThread(); return }
@@ -132,7 +133,7 @@ export default function ChatPanel({ activeFile, tree = [], markers = [], onFileO
 
     // ── Build trimmed LLM history ─────────────────────────────────────────
     // Use messages BEFORE the user message we just added (it's added via buildLLMHistory)
-    const history = buildLLMHistory(messages, content)
+    const history = buildLLMHistory(messages, content, images)
 
     // ── Create streaming message with a UNIQUE id ─────────────────────────
     // This id is only used during streaming — it will NOT be the same as the
@@ -166,6 +167,7 @@ export default function ChatPanel({ activeFile, tree = [], markers = [], onFileO
         signal: controller.signal,
         body: JSON.stringify({
           thread_id: activeThreadId,
+          session_id: activeThreadId,
           messages: history,
           context,
           model_config: {
@@ -177,9 +179,10 @@ export default function ChatPanel({ activeFile, tree = [], markers = [], onFileO
           },
           mode: modeOverride,
           settings: {
-            max_iterations: settings.max_iterations || 20,
+            max_iterations: brainModeEnabled ? Math.max(settings.max_iterations || 20, 35) : (settings.max_iterations || 20),
             auto_apply: settings.auto_apply || false,
-            web_search_enabled: settings.web_search_enabled || false,
+            web_search_enabled: webSearchEnabled || settings.web_search_enabled || false,
+            brain_mode: brainModeEnabled || settings.brain_mode || false,
             confirm_commands: settings.confirm_commands || false,
           },
         }),
@@ -388,6 +391,7 @@ export default function ChatPanel({ activeFile, tree = [], markers = [], onFileO
         onOpenSettings={() => setShowSettings(true)}
         modeOverride={modeOverride}
         onModeOverride={setModeOverride}
+        threadId={activeThreadId}
         tokenCount={tokenCount}
         maxTokens={getChatSettings().max_tokens || 128000}
       />

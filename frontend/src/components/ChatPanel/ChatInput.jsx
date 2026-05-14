@@ -16,6 +16,14 @@ const SLASH_COMMANDS = [
   { cmd: '/help',    desc: 'Show all commands' },
 ]
 
+function readSettings() {
+  try {
+    return JSON.parse(localStorage.getItem('chat_settings') || '{}')
+  } catch {
+    return {}
+  }
+}
+
 export default function ChatInput({
   onSend,
   onStop,
@@ -31,6 +39,7 @@ export default function ChatInput({
   onOpenSettings,
   modeOverride,
   onModeOverride,
+  threadId = 'default',
   tokenCount = 0,
   maxTokens = 128000,
 }) {
@@ -43,6 +52,12 @@ export default function ChatInput({
   const [atFilter, setAtFilter] = useState('')
   const [hashFilter, setHashFilter] = useState('')
   const [isComposing, setIsComposing] = useState(false)
+  const [webSearchEnabled, setWebSearchEnabled] = useState(() => {
+    return Boolean(readSettings()?.web_search_enabled)
+  })
+  const [brainModeEnabled, setBrainModeEnabled] = useState(() => {
+    return Boolean(readSettings()?.brain_mode)
+  })
   const textareaRef = useRef(null)
   const fileInputRef = useRef(null)
   const containerRef = useRef(null)
@@ -123,13 +138,13 @@ export default function ChatInput({
     const text = input.trim()
     if (!text && images.length === 0) return
     if (streaming) return
-    onSend({ text, images, contextChips })
+    onSend({ text, images, contextChips, webSearchEnabled, brainModeEnabled })
     setInput('')
     setImages([])
     setShowContextPicker(false)
     setShowFilePicker(false)
     setShowSlash(false)
-  }, [input, images, contextChips, streaming, onSend])
+  }, [input, images, contextChips, streaming, onSend, webSearchEnabled, brainModeEnabled])
 
   // Handle @ context selection
   const handleContextSelect = async (option) => {
@@ -279,7 +294,11 @@ export default function ChatInput({
     const formData = new FormData()
     for (const f of Array.from(files).slice(0, 10)) formData.append('files', f)
     try {
-      const res = await fetch(`${BASE}/chat/upload`, { method: 'POST', body: formData, headers: authHeaders() })
+      const res = await fetch(`${BASE}/chat/upload`, {
+        method: 'POST',
+        body: formData,
+        headers: authHeaders({ 'X-Session-Id': threadId }),
+      })
       if (!res.ok) throw new Error(await res.text())
       const data = await res.json()
       for (const f of data.files) {
@@ -388,13 +407,35 @@ export default function ChatInput({
 
         {/* Web search toggle */}
         <button
-          className="p-1.5 rounded transition-colors" style={{ color: 'var(--text-secondary)' }} onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-bright)'; e.currentTarget.style.background = 'var(--bg-hover)' }} onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'transparent' }} title="Web search">
+          onClick={() => {
+            const next = !webSearchEnabled
+            setWebSearchEnabled(next)
+            const saved = readSettings()
+            localStorage.setItem('chat_settings', JSON.stringify({ ...saved, web_search_enabled: next }))
+          }}
+          className="p-1.5 rounded transition-colors"
+          style={{
+            color: webSearchEnabled ? 'var(--text-info)' : 'var(--text-secondary)',
+            background: webSearchEnabled ? 'color-mix(in srgb, var(--text-info) 15%, transparent)' : 'transparent',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-bright)'; e.currentTarget.style.background = 'var(--bg-hover)' }} onMouseLeave={(e) => { e.currentTarget.style.color = webSearchEnabled ? 'var(--text-info)' : 'var(--text-secondary)'; e.currentTarget.style.background = webSearchEnabled ? 'color-mix(in srgb, var(--text-info) 15%, transparent)' : 'transparent' }} title="Web search">
           <Globe size={14} />
         </button>
 
         {/* Thinking toggle */}
         <button
-          className="p-1.5 rounded transition-colors" style={{ color: 'var(--text-secondary)' }} onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-bright)'; e.currentTarget.style.background = 'var(--bg-hover)' }} onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'transparent' }} title="Extended thinking">
+          onClick={() => {
+            const next = !brainModeEnabled
+            setBrainModeEnabled(next)
+            const saved = readSettings()
+            localStorage.setItem('chat_settings', JSON.stringify({ ...saved, brain_mode: next }))
+          }}
+          className="p-1.5 rounded transition-colors"
+          style={{
+            color: brainModeEnabled ? 'var(--text-warning)' : 'var(--text-secondary)',
+            background: brainModeEnabled ? 'color-mix(in srgb, var(--text-warning) 15%, transparent)' : 'transparent',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-bright)'; e.currentTarget.style.background = 'var(--bg-hover)' }} onMouseLeave={(e) => { e.currentTarget.style.color = brainModeEnabled ? 'var(--text-warning)' : 'var(--text-secondary)'; e.currentTarget.style.background = brainModeEnabled ? 'color-mix(in srgb, var(--text-warning) 15%, transparent)' : 'transparent' }} title="Extended thinking">
           <Brain size={14} />
         </button>
 

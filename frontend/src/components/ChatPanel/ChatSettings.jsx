@@ -6,7 +6,7 @@ const DEFAULTS = {
   max_tokens: 4096, temperature: 0.7,
   streaming: true,
   max_iterations: 20, auto_apply: false,
-  show_thinking: true, confirm_commands: false,
+  show_thinking: true, brain_mode: false, confirm_commands: false,
   web_search_enabled: false, search_api_key: '',
   auto_include_file: true, auto_include_selection: true,
   auto_include_diagnostics: true, max_context_lines: 200,
@@ -132,6 +132,7 @@ export default function ChatSettings({ open, onClose }) {
           </Row>
           <Row label="Auto-apply changes"><Toggle value={s.auto_apply} onChange={v => update('auto_apply', v)} /></Row>
           <Row label="Show thinking"><Toggle value={s.show_thinking} onChange={v => update('show_thinking', v)} /></Row>
+          <Row label="Brain mode"><Toggle value={s.brain_mode} onChange={v => update('brain_mode', v)} /></Row>
           <Row label="Confirm commands"><Toggle value={s.confirm_commands} onChange={v => update('confirm_commands', v)} /></Row>
           <Row label="Web search"><Toggle value={s.web_search_enabled} onChange={v => update('web_search_enabled', v)} /></Row>
 
