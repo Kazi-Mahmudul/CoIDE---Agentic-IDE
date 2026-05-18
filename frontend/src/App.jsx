@@ -19,6 +19,9 @@ import {
   createExternalFile,
   getAuthToken,
   getCurrentUser,
+  ensureFreshToken,
+  logout,
+  verifyEmail,
   setAuthToken,
 } from './api.js'
 import { applyTheme, THEMES } from './themes.js'
@@ -111,13 +114,30 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    const verifyToken = new URLSearchParams(window.location.search).get('verify_token')
+    if (verifyToken) {
+      verifyEmail(verifyToken)
+        .then(() => toast.success('Email verified. You can sign in now.'))
+        .catch((e) => toast.error(e.message || 'Email verification failed'))
+        .finally(() => {
+          const url = new URL(window.location.href)
+          url.searchParams.delete('verify_token')
+          window.history.replaceState({}, document.title, url.toString())
+        })
+    }
+
     const token = getAuthToken()
     if (!token) {
       setAuthOpen(true)
       setAuthReady(true)
       return
     }
-    getCurrentUser()
+    ensureFreshToken()
+      .catch(() => {
+        setAuthToken('')
+        localStorage.removeItem('coide_user')
+      })
+      .then(() => getCurrentUser())
       .then((u) => {
         localStorage.setItem('coide_user', JSON.stringify(u))
         setAuthOpen(false)
@@ -129,6 +149,18 @@ export default function App() {
       })
       .finally(() => setAuthReady(true))
   }, [])
+
+  useEffect(() => {
+    if (!authReady || authOpen) return
+    const timer = setInterval(() => {
+      ensureFreshToken().catch(() => {
+        setAuthToken('')
+        localStorage.removeItem('coide_user')
+        setAuthOpen(true)
+      })
+    }, 60000)
+    return () => clearInterval(timer)
+  }, [authReady, authOpen])
 
   // ── Apply theme to document ─────────────────────────────────────────────
   useEffect(() => {
@@ -313,6 +345,11 @@ export default function App() {
     onOpenThemePicker: () => setThemePickerOpen(true),
     onSaveAll: handleSaveAll,
     onOpenFile: handleOpenFile,
+    onLogout: async () => {
+      await logout()
+      setAuthOpen(true)
+      toast.success('Signed out')
+    },
   })
 
   // ── Go to line from problems panel ─────────────────────────────────────

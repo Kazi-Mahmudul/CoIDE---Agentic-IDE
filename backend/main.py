@@ -4,6 +4,7 @@ Mounts all routers, sets up CORS, ensures workspace/ exists.
 """
 
 import logging
+import os
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -12,6 +13,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import WORKSPACE_DIR
+from db import apply_migrations
 from files import router as files_router
 from agent import router as agent_router
 from terminal import router as terminal_router
@@ -30,6 +32,7 @@ logger = logging.getLogger("coide.api")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    apply_migrations()
     ensure_workspace_root()
     print(f"[Coide] Workspace: {WORKSPACE_DIR}")
     yield
@@ -37,10 +40,16 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Coide - Agentic Web IDE", version="1.0.0", lifespan=lifespan)
 
+_cors_origins_env = os.environ.get("COIDE_CORS_ORIGINS", "*").strip()
+ALLOWED_ORIGINS = ["*"] if _cors_origins_env == "*" else [
+    origin.strip() for origin in _cors_origins_env.split(",") if origin.strip()
+]
+ALLOW_CREDENTIALS = False if ALLOWED_ORIGINS == ["*"] else True
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=ALLOWED_ORIGINS or ["*"],
+    allow_credentials=ALLOW_CREDENTIALS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -57,6 +66,10 @@ async def request_context_middleware(request: Request, call_next):
         logger.exception("Unhandled server error", extra={"request_id": request_id, "path": request.url.path})
         raise
     elapsed_ms = int((time.perf_counter() - started) * 1000)
+    response.headers["x-content-type-options"] = "nosniff"
+    response.headers["x-frame-options"] = "DENY"
+    response.headers["referrer-policy"] = "same-origin"
+    response.headers["content-security-policy"] = "default-src 'self'; frame-ancestors 'none'"
     response.headers["x-request-id"] = request_id
     logger.info("%s %s -> %s (%sms)", request.method, request.url.path, response.status_code, elapsed_ms)
     return response

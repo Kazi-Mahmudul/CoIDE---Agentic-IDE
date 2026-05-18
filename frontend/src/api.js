@@ -29,6 +29,17 @@ async function request(path, init = {}) {
   return body
 }
 
+function parseJwtExp(token) {
+  try {
+    const segment = token.split('.')[1]
+    if (!segment) return 0
+    const payload = JSON.parse(atob(segment.replace(/-/g, '+').replace(/_/g, '/')))
+    return Number(payload?.exp || 0) * 1000
+  } catch {
+    return 0
+  }
+}
+
 // ── Model config ─────────────────────────────────────────────────────────────
 export function getModelConfig() {
   try {
@@ -219,12 +230,69 @@ export async function streamAgentChat(messages, onEvent) {
   }
 }
 
-export async function login(username, password) {
-  return request('/auth/login', {
+export async function signUp(email, password) {
+  return request('/auth/signup', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ email, password }),
   })
+}
+
+export async function signIn(email, password) {
+  return request('/auth/signin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  })
+}
+
+export async function verifyEmail(token) {
+  return request('/auth/verify-email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  })
+}
+
+export async function resendVerification(email) {
+  return request('/auth/resend-verification', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: 'unused' }),
+  })
+}
+
+export async function refreshSession() {
+  return request('/auth/refresh', { method: 'POST' })
+}
+
+export async function logout() {
+  try {
+    await request('/auth/logout', { method: 'POST' })
+  } finally {
+    setAuthToken('')
+    localStorage.removeItem('coide_user')
+  }
+}
+
+export async function ensureFreshToken() {
+  const token = getAuthToken()
+  if (!token) return null
+  const expMs = parseJwtExp(token)
+  if (expMs && (expMs - Date.now()) > 120000) {
+    return token
+  }
+  const refreshed = await refreshSession()
+  if (refreshed?.token) {
+    setAuthToken(refreshed.token)
+    return refreshed.token
+  }
+  return token
+}
+
+export async function login(usernameOrEmail, password) {
+  // Backward-compatible helper retained for existing callsites.
+  return signIn(usernameOrEmail, password)
 }
 
 export async function getCurrentUser() {

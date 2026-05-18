@@ -2,7 +2,7 @@ import { writeExternalFile, writeFile } from '../../api.js'
 
 // All menu definitions — every action is implemented.
 
-export function buildMenus({ store, editorRef, openCommandPalette, toast, onOpenThemePicker, onSaveAll, onOpenFile }) {
+export function buildMenus({ store, editorRef, openCommandPalette, toast, onOpenThemePicker, onSaveAll, onOpenFile, onLogout }) {
   const ed = (actionId) => () => {
     editorRef?.current?.focus()
     editorRef?.current?.trigger(actionId)
@@ -33,6 +33,8 @@ export function buildMenus({ store, editorRef, openCommandPalette, toast, onOpen
         { separator: true },
         { label: 'Close Editor',    shortcut: 'Ctrl+W',         action: () => store.closeActiveTab() },
         { label: 'Close Folder',                                 action: () => store.setExternalRoot(null) },
+        { separator: true },
+        { label: 'Sign Out',                                     action: () => onLogout?.() },
         { separator: true },
         { label: 'Exit',                                         action: () => window.close() },
       ],

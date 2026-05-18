@@ -4,6 +4,11 @@ aiofiles
 httpx
 python-multipart
 websockets
+psycopg[binary]
+PyJWT
+passlib[bcrypt]
+email-validator
 pywinpty; sys_platform == "win32"
 pytest>=8.0
 pytest-asyncio>=0.23
+python-dotenv
