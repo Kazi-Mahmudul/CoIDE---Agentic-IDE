@@ -8,22 +8,25 @@ import os
 from contextlib import contextmanager
 from pathlib import Path
 
-from dotenv import find_dotenv, load_dotenv
+try:
+    from dotenv import find_dotenv, load_dotenv
+except Exception:  # pragma: no cover - optional in serverless/runtime envs
+    find_dotenv = None
+    load_dotenv = None
 import psycopg
 from psycopg.rows import dict_row
 
-load_dotenv(find_dotenv())
+if load_dotenv and find_dotenv:
+    load_dotenv(find_dotenv())
 
 _BACKEND_DIR = Path(__file__).resolve().parent
 _MIGRATIONS_DIR = _BACKEND_DIR / "migrations"
 
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-
-
 def require_database_url() -> str:
-    if not DATABASE_URL:
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if not database_url:
         raise RuntimeError("DATABASE_URL is required for authentication and persistence")
-    return DATABASE_URL
+    return database_url
 
 
 @contextmanager
@@ -61,4 +64,3 @@ def apply_migrations():
                     (version,),
                 )
         conn.commit()
-
