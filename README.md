@@ -119,10 +119,3 @@ Deploy frontend and backend as two separate projects.
 - For durable multi-instance file persistence, use persistent storage for workspace files (not ephemeral serverless disk).
 - WebSocket/PTY terminal workloads may need a long-running backend host for best reliability at scale.
 
-## Recruiter Snapshot
-
-If you are evaluating this as a candidate project, focus on:
-- security depth (auth/session/rate-limit design)
-- full-stack ownership (frontend UX to backend infra)
-- practical deployment readiness
-- multi-user safety and isolation in a complex interactive app
