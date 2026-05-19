@@ -140,12 +140,17 @@ def _send_verification_email(recipient: str, token: str):
         "If you did not create this account, you can ignore this email."
     )
 
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as smtp:
-        if SMTP_USE_TLS:
-            smtp.starttls()
-        if SMTP_USERNAME:
-            smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
-        smtp.send_message(msg)
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as smtp:
+            if SMTP_USE_TLS:
+                smtp.starttls()
+            if SMTP_USERNAME:
+                smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
+            smtp.send_message(msg)
+    except smtplib.SMTPException as e:
+        raise HTTPException(status_code=503, detail=f"Email delivery failed: {e.__class__.__name__}")
+    except OSError as e:
+        raise HTTPException(status_code=503, detail=f"Email delivery network error: {e.__class__.__name__}")
 
 
 def _extract_client_ip(request: Request) -> str:
