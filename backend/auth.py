@@ -16,15 +16,16 @@ import re
 import secrets
 import smtplib
 import uuid
+import base64
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
 
 import jwt
+import bcrypt
 from email_validator import EmailNotValidError, validate_email
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from passlib.context import CryptContext
 from pydantic import BaseModel
 
 from config import WORKSPACE_DIR
@@ -57,14 +58,11 @@ RATE_LIMIT_MAX_ATTEMPTS_PER_IP = int(os.environ.get("COIDE_RATE_LIMIT_MAX_ATTEMP
 
 PASSWORD_MIN_LENGTH = 6
 PASSWORD_MAX_LENGTH = 128
+PBKDF2_ROUNDS = int(os.environ.get("COIDE_PBKDF2_ROUNDS", "390000"))
 PASSWORD_UPPER_RE = re.compile(r"[A-Z]")
 PASSWORD_LOWER_RE = re.compile(r"[a-z]")
 PASSWORD_DIGIT_RE = re.compile(r"\d")
 PASSWORD_SYMBOL_RE = re.compile(r"[^A-Za-z0-9]")
-
-# Use bcrypt_sha256 to avoid bcrypt's 72-byte input limit while keeping bcrypt-compatible security.
-# Keep plain bcrypt listed for backward compatibility with any existing hashes.
-pwd_context = CryptContext(schemes=["bcrypt_sha256", "bcrypt"], deprecated="auto")
 
 
 def _utcnow() -> datetime:
@@ -104,6 +102,50 @@ def _validate_password(password: str) -> str:
     if not PASSWORD_SYMBOL_RE.search(password):
         raise HTTPException(status_code=400, detail="Password must include at least one symbol")
     return password
+
+
+def _b64(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
+
+
+def _b64decode(data: str) -> bytes:
+    pad = "=" * (-len(data) % 4)
+    return base64.urlsafe_b64decode((data + pad).encode("ascii"))
+
+
+def _hash_password_pbkdf2(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ROUNDS)
+    return f"pbkdf2_sha256${PBKDF2_ROUNDS}${_b64(salt)}${_b64(dk)}"
+
+
+def _verify_password_pbkdf2(password: str, encoded: str) -> bool:
+    try:
+        algo, rounds_str, salt_b64, hash_b64 = encoded.split("$", 3)
+        if algo != "pbkdf2_sha256":
+            return False
+        rounds = int(rounds_str)
+        salt = _b64decode(salt_b64)
+        expected = _b64decode(hash_b64)
+        actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, rounds)
+        return hmac.compare_digest(actual, expected)
+    except Exception:
+        return False
+
+
+def _verify_password(password: str, stored_hash: str, password_algo: str | None = None) -> bool:
+    algo = (password_algo or "").strip().lower()
+    if algo == "pbkdf2_sha256" or stored_hash.startswith("pbkdf2_sha256$"):
+        return _verify_password_pbkdf2(password, stored_hash)
+
+    # Legacy fallback for already-created bcrypt records.
+    if algo in ("bcrypt", "bcrypt_sha256") or stored_hash.startswith("$2"):
+        try:
+            return bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8"))
+        except Exception:
+            return False
+
+    return False
 
 
 def _workspace_key_for_user(user_id: str) -> str:
@@ -363,10 +405,7 @@ async def signup(body: AuthBody, request: Request):
     password = _validate_password(body.password)
     user_id = str(uuid.uuid4())
     workspace_key = _workspace_key_for_user(user_id)
-    try:
-        password_hash = pwd_context.hash(password)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Password format is not supported")
+    password_hash = _hash_password_pbkdf2(password)
 
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("SELECT id FROM users WHERE email = %s", (email,))
@@ -375,7 +414,7 @@ async def signup(body: AuthBody, request: Request):
         cur.execute(
             """
             INSERT INTO users (id, email, password_hash, password_algo, is_email_verified, created_at, updated_at)
-            VALUES (%s, %s, %s, 'bcrypt_sha256', %s, NOW(), NOW())
+            VALUES (%s, %s, %s, 'pbkdf2_sha256', %s, NOW(), NOW())
             """,
             (user_id, email, password_hash, not REQUIRE_EMAIL_VERIFICATION),
         )
@@ -509,17 +548,14 @@ async def signin(body: AuthBody, request: Request):
 
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
-            "SELECT id, email, password_hash, is_email_verified FROM users WHERE email = %s",
+            "SELECT id, email, password_hash, password_algo, is_email_verified FROM users WHERE email = %s",
             (email,),
         )
         rec = cur.fetchone()
 
     verified = False
     if rec:
-        try:
-            verified = bool(pwd_context.verify(password, rec["password_hash"]))
-        except ValueError:
-            verified = False
+        verified = _verify_password(password, rec["password_hash"], rec.get("password_algo"))
 
     if not rec or not verified:
         _record_login_attempt(email, ip, False)

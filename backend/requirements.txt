@@ -6,7 +6,7 @@ python-multipart
 websockets
 psycopg[binary]
 PyJWT
-passlib[bcrypt]
+bcrypt==4.0.1
 email-validator
 pywinpty; sys_platform == "win32"
 pytest>=8.0
