@@ -52,8 +52,16 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="Coide - Agentic Web IDE", version="1.0.0", lifespan=lifespan)
 
 _cors_origins_env = os.environ.get("COIDE_CORS_ORIGINS", "*").strip()
+
+
+def _normalize_origin(value: str) -> str:
+    return value.strip().rstrip("/")
+
+
 ALLOWED_ORIGINS = ["*"] if _cors_origins_env == "*" else [
-    origin.strip() for origin in _cors_origins_env.split(",") if origin.strip()
+    _normalize_origin(origin)
+    for origin in _cors_origins_env.replace("\n", ",").split(",")
+    if _normalize_origin(origin)
 ]
 ALLOW_CREDENTIALS = False if ALLOWED_ORIGINS == ["*"] else True
 
