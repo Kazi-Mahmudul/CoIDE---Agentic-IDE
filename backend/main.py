@@ -28,12 +28,23 @@ from workspace import ensure_workspace_root
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("coide.api")
+STARTUP_ERRORS: list[str] = []
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    apply_migrations()
-    ensure_workspace_root()
+    try:
+        apply_migrations()
+    except Exception as e:
+        msg = f"Migration error: {e}"
+        STARTUP_ERRORS.append(msg)
+        logger.exception(msg)
+    try:
+        ensure_workspace_root()
+    except Exception as e:
+        msg = f"Workspace init error: {e}"
+        STARTUP_ERRORS.append(msg)
+        logger.exception(msg)
     print(f"[Coide] Workspace: {WORKSPACE_DIR}")
     yield
 
@@ -121,7 +132,12 @@ app.include_router(auth_router)
 
 @app.get("/")
 async def root():
-    return {"status": "ok", "app": "Coide Agentic IDE"}
+    return {
+        "status": "ok" if not STARTUP_ERRORS else "degraded",
+        "app": "Coide Agentic IDE",
+        "workspace": WORKSPACE_DIR,
+        "startup_errors": STARTUP_ERRORS[:3],
+    }
 
 
 @app.get("/git/branch")

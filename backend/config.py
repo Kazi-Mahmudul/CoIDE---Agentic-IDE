@@ -11,4 +11,12 @@ import os
 _BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_BACKEND_DIR)
 
-WORKSPACE_DIR = os.path.normpath(os.path.join(_PROJECT_ROOT, "workspace"))
+_DEFAULT_WORKSPACE_DIR = os.path.normpath(os.path.join(_PROJECT_ROOT, "workspace"))
+
+# In serverless (Vercel), only /tmp is writable.
+if os.environ.get("VERCEL"):
+    _DEFAULT_WORKSPACE_DIR = "/tmp/coide-workspace"
+
+WORKSPACE_DIR = os.path.normpath(
+    os.environ.get("COIDE_WORKSPACE_DIR", _DEFAULT_WORKSPACE_DIR)
+)
