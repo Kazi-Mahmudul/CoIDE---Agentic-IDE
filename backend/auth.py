@@ -62,7 +62,9 @@ PASSWORD_LOWER_RE = re.compile(r"[a-z]")
 PASSWORD_DIGIT_RE = re.compile(r"\d")
 PASSWORD_SYMBOL_RE = re.compile(r"[^A-Za-z0-9]")
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Use bcrypt_sha256 to avoid bcrypt's 72-byte input limit while keeping bcrypt-compatible security.
+# Keep plain bcrypt listed for backward compatibility with any existing hashes.
+pwd_context = CryptContext(schemes=["bcrypt_sha256", "bcrypt"], deprecated="auto")
 
 
 def _utcnow() -> datetime:
@@ -361,7 +363,10 @@ async def signup(body: AuthBody, request: Request):
     password = _validate_password(body.password)
     user_id = str(uuid.uuid4())
     workspace_key = _workspace_key_for_user(user_id)
-    password_hash = pwd_context.hash(password)
+    try:
+        password_hash = pwd_context.hash(password)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Password format is not supported")
 
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("SELECT id FROM users WHERE email = %s", (email,))
@@ -370,7 +375,7 @@ async def signup(body: AuthBody, request: Request):
         cur.execute(
             """
             INSERT INTO users (id, email, password_hash, password_algo, is_email_verified, created_at, updated_at)
-            VALUES (%s, %s, %s, 'bcrypt', %s, NOW(), NOW())
+            VALUES (%s, %s, %s, 'bcrypt_sha256', %s, NOW(), NOW())
             """,
             (user_id, email, password_hash, not REQUIRE_EMAIL_VERIFICATION),
         )
@@ -509,7 +514,14 @@ async def signin(body: AuthBody, request: Request):
         )
         rec = cur.fetchone()
 
-    if not rec or not pwd_context.verify(password, rec["password_hash"]):
+    verified = False
+    if rec:
+        try:
+            verified = bool(pwd_context.verify(password, rec["password_hash"]))
+        except ValueError:
+            verified = False
+
+    if not rec or not verified:
         _record_login_attempt(email, ip, False)
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
