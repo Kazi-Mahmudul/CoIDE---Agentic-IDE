@@ -264,10 +264,10 @@ def _issue_access_token(user: UserContext) -> str:
     _require_jwt_secret()
     now = _utcnow()
     payload = {
-        "sub": user.user_id,
+        "sub": str(user.user_id),
         "email": user.email,
-        "sid": user.session_id,
-        "wsp": user.workspace_key,
+        "sid": str(user.session_id),
+        "wsp": str(user.workspace_key),
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(seconds=ACCESS_TOKEN_TTL_SECONDS)).timestamp()),
         "typ": "access",
@@ -378,10 +378,10 @@ def get_workspace_dir(user: UserContext) -> str:
 
 def _public_user_payload(user_id: str, email: str, workspace_key: str) -> dict:
     return {
-        "id": user_id,
+        "id": str(user_id),
         "email": email,
         "username": email,
-        "workspace_key": workspace_key,
+        "workspace_key": str(workspace_key),
     }
 
 
@@ -565,20 +565,21 @@ async def signin(body: AuthBody, request: Request):
         raise HTTPException(status_code=403, detail="Please verify your email before signing in")
 
     _record_login_attempt(email, ip, True)
-    session_id, expires_at = _create_session(rec["id"], ip, request.headers.get("user-agent"))
-    workspace_key = _get_workspace_key(rec["id"])
-    user_ctx = UserContext(user_id=rec["id"], email=rec["email"], session_id=session_id, workspace_key=workspace_key)
+    user_id = str(rec["id"])
+    session_id, expires_at = _create_session(user_id, ip, request.headers.get("user-agent"))
+    workspace_key = _get_workspace_key(user_id)
+    user_ctx = UserContext(user_id=user_id, email=rec["email"], session_id=str(session_id), workspace_key=str(workspace_key))
     token = _issue_access_token(user_ctx)
 
     with get_conn() as conn, conn.cursor() as cur:
-        cur.execute("UPDATE users SET last_login_at = NOW(), updated_at = NOW() WHERE id = %s", (rec["id"],))
+        cur.execute("UPDATE users SET last_login_at = NOW(), updated_at = NOW() WHERE id = %s", (user_id,))
         conn.commit()
 
     return {
         "status": "ok",
         "token": token,
         "expires_at": expires_at.isoformat(),
-        "user": _public_user_payload(rec["id"], rec["email"], workspace_key),
+        "user": _public_user_payload(user_id, rec["email"], workspace_key),
         "workspace": get_workspace_dir(user_ctx),
     }
 
